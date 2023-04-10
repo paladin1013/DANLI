@@ -10,7 +10,8 @@ from transformers import AutoTokenizer
 from model.data.subgoal_seq2seq import SubgoalDataset
 from model.model.model_plm import PLModelWrapper
 from model.utils.data_util import process_edh_for_subgoal_prediction
-
+from typing import Dict
+from torch.utils.data import DataLoader
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -51,8 +52,10 @@ if __name__ == "__main__":
 
     # load dataset(s)
     print("Create datasets and loaders...")
-    partitions = ["valid_seen"]
+    # partitions = ["valid_seen"]
+    partitions = ["train", "valid_seen"]
     datasets, loaders = {}, {}
+    loaders: Dict[str, DataLoader]
     for split in partitions:
         datasets[split] = SubgoalDataset(tokenizer, args=model_args, split=[split])
         loaders[split] = torch.utils.data.DataLoader(
@@ -63,7 +66,7 @@ if __name__ == "__main__":
             pin_memory=True,
         )
     # datasets["train"] = SubgoalDataset(tokenizer, args=model_args, split=None)
-
+    
     device = "cuda:0"
     print("Create model...")
     model_ckpt = os.path.join(
@@ -81,23 +84,37 @@ if __name__ == "__main__":
     raw_edh_path = os.path.join(
         os.environ["DANLI_DATA_DIR"], "edh_instances/valid_seen"
     )
-    for edh_fn in random.sample(os.listdir(raw_edh_path), 10):
-        raw_edh = json.load(open(os.path.join(raw_edh_path, edh_fn)))
-
-        print("processing batch")
-        edh, _ = process_edh_for_subgoal_prediction(raw_edh)
-        batch = datasets["valid_seen"].data_collect(
-            [edh], inference_mode=True, device=device
-        )
-
-        print("-" * 30, "encoder input", "-" * 30)
+    
+    sample_num = 10
+    for batch_idx, batch in enumerate(loaders["valid_seen"]):
+        if batch_idx >= sample_num:
+            break
+        # print(batch)
+        for key, value in batch.items():
+            if isinstance(value, torch.Tensor):
+                batch[key] = value.to(device=device)
         pprint(tokenizer.batch_decode(batch["encoder_input_ids"]))
-        print("")
-
         predictions = model.predict(batch, max_step=64)
-        print("-" * 30, "predictions", "-" * 30)
         pprint(predictions)
-        print("")
+    
+    
+    
+    # for edh_fn in random.sample(os.listdir(raw_edh_path), 10):
+    #     raw_edh = json.load(open(os.path.join(raw_edh_path, edh_fn)))
 
-        print("-" * 30, "golden future actions", "-" * 30)
-        pprint(raw_edh["future_subgoals"])
+    #     print("processing batch")
+    #     edh, _ = process_edh_for_subgoal_prediction(raw_edh)
+    #     batch = datasets["valid_seen"].data_collect(
+    #         [edh], inference_mode=False, device=device
+    #     )
+    #     print("-" * 30, "encoder input", "-" * 30)
+    #     pprint(tokenizer.batch_decode(batch["encoder_input_ids"]))
+    #     print("")
+
+    #     predictions = model.predict(batch, max_step=64)
+    #     print("-" * 30, "predictions", "-" * 30)
+    #     pprint(predictions)
+    #     print("")
+
+    #     print("-" * 30, "golden future actions", "-" * 30)
+    #     pprint(raw_edh["future_subgoals"])

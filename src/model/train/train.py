@@ -79,8 +79,9 @@ def main(args):
 
     # create neuptune logger
     neptune_logger = NeptuneLogger(
-        api_key="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiI1Y2MxNzFhNS01ZWIxLTRkZmYtODA0NS05ZDM0ZTljMGIyMDkifQ==",  # replace with your own
-        project="594zyc/TEACh-Mental",
+        project="paladin1013/DANLI",
+        api_key="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiIyNmQ4OTE4Zi01MjQzLTRlZTItYjUxMy0xYTA0NjdlODAwNjYifQ==",
+
         log_model_checkpoints=False,
         # prefix=datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
     )
