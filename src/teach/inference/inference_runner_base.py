@@ -55,6 +55,29 @@ class InferenceRunnerBase:
         mp.set_start_method("spawn", force=True)
 
     def run(self):
+        if "--debug" in self._config.model_args and self._config.num_processes == 1:
+            # Enable breakpoint debug. Will not call any subprocesses.
+            process_index = 0
+            num_files = len(self._input_files)
+            
+            num_files_per_process = InferenceRunnerBase._get_num_files_per_process(
+                num_files=num_files, num_processes=self._config.num_processes
+            )
+            start_index, end_index = InferenceRunnerBase._get_range_to_process(
+                process_index=process_index,
+                num_files_per_process=num_files_per_process,
+                num_files=num_files,
+            )
+
+            simulator_options = {
+                'renderInstanceSegmentation': '--hlsm_use_gt_obj_det' in self._config.model_args,
+                'renderSemanticSegmentation': '--hlsm_use_gt_seg' in self._config.model_args,
+                'renderDepthImage': '--hlsm_use_gt_depth' in self._config.model_args
+            }
+            er = EpisodeReplay(
+                "thor", ["ego", "allo", "targetobject"], process_index, simulator_options
+            )
+            self._run(process_index, self._input_files[start_index:end_index], self._config, er)
         self._launch_processes(self._input_files, self._config)
         return self._load_metrics()
 
