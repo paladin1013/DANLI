@@ -11,6 +11,7 @@ os.environ["TRANSFORMERS_OFFLINE"] = "true"
 from transformers import BartTokenizer
 
 from model.model.model_plm import PLModelWrapper
+from model.model.llm_subgoal_predictor import LLMSubgoalPredictor
 from model.data.subgoal_seq2seq import SubgoalDataset
 from model.utils.data_util import process_edh_for_subgoal_prediction
 
@@ -41,7 +42,7 @@ class BaseSubgoalAgent:
         self.sg_pointer = 0
         self.current_subgoal = None
         self.STATE = "INIT"  # INIT, TERMINATE, SG_IN_PROGRESS, SG_COMPLETED, SG_FAILED
-
+                
     def _load_subgoal_predictor(self):
         root_dir = self.args.subgoal_predictor_path
         ckpt_dir = os.path.join(
@@ -62,6 +63,9 @@ class BaseSubgoalAgent:
         self.sg_predictor.eval()
         self.sg_predictor.freeze()
         self.log_func(f"Subgoal predictor is loaded from: {ckpt_dir}")
+        
+        self.llm_sg_predictor = LLMSubgoalPredictor() 
+        
 
     def reset(self):
         self.predicted_future_subgoals = []
@@ -76,9 +80,9 @@ class BaseSubgoalAgent:
             if "instance_id" in edh_instance
             else edh_instance["game_id"]
         )
-        edh, dialog_history = process_edh_for_subgoal_prediction(edh_instance)
+        edh_text, dialog_history = process_edh_for_subgoal_prediction(edh_instance)
         edh = self.sg_predictor_data_handler.data_collect(
-            [edh], inference_mode=True, device=self.device
+            [edh_text], inference_mode=True, device=self.device
         )
         sg_predictions = self.sg_predictor.predict(edh, max_step=64)
 
@@ -123,7 +127,18 @@ class BaseSubgoalAgent:
 
         self.record = self.create_empty_record()
 
-        return self.predicted_future_subgoals, dialog_history
+        new_meta_data = {}
+        new_meta_data["gt_subgoals"] = self.gt_future_subgoals
+        new_meta_data["gt_subgoals_raw"] = edh_instance['future_subgoals']
+        new_meta_data["subgoals"] = predicted_future_subgoals[:-1]
+        new_meta_data["dialogs"] = dialog_history
+        
+        if self.args.use_llm:
+            edh_input = self.llm_sg_predictor.parse_edh_data(edh_instance, edh_text['text_dialog_and_act'])
+            llm_sg_predictions = self.llm_sg_predictor.predict(edh_input)
+            new_meta_data["llm_subgoals"] = llm_sg_predictions
+
+        return self.predicted_future_subgoals, new_meta_data
 
     def step(self, tracked_state: NeuralSymbolicAgentState) -> TeachAction:
         # return TeachAction(action_type="Stop")

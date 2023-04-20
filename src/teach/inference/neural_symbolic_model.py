@@ -80,6 +80,7 @@ class NeuralSymbolicModel(TeachModel):
         parser.add_argument("--disable_scene_pruning", action="store_true")
         parser.add_argument("--last_subgoal_only", action="store_true")
 
+        parser.add_argument("--use_llm", action="store_true")
         args = parser.parse_args(model_args)
         self.args = args
 

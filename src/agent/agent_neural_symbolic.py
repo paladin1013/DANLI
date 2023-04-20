@@ -135,7 +135,7 @@ class NeuralSymbolicAgent:
         self.dialogs = dialogs
 
         self.logger.info("Predict subgoals from edh history:")
-        future_subgoals, dialog_history = self.subgoal_agent.set_subgoals(edh_instance)
+        future_subgoals, new_meta_data = self.subgoal_agent.set_subgoals(edh_instance)
         if not future_subgoals:
             self.logger.info("No subgoal is predicted. End session!")
             self.STATE = "TERMINATE"
@@ -146,8 +146,7 @@ class NeuralSymbolicAgent:
                 )
                 self.subgoal_agent.save_execution_log()
             return
-        self.all_meta_data["subgoals"] = future_subgoals
-        self.all_meta_data["dialogs"] = dialog_history
+        self.all_meta_data.update(new_meta_data)
 
         self.logger.info(
             "Drive the agent following the ground truth history trajectory:"
