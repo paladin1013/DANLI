@@ -3,6 +3,6 @@ TALL_GRID = True
 
 # Whether to visualize intermediate maps in OpenCV windows during rollouts and training.
 # Set True for development
-GLOBAL_VIZ = False
+GLOBAL_VIZ = True
 
 BIG_TRACE = False

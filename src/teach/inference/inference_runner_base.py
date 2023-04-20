@@ -78,6 +78,7 @@ class InferenceRunnerBase:
                 "thor", ["ego", "allo", "targetobject"], process_index, simulator_options
             )
             self._run(process_index, self._input_files[start_index:end_index], self._config, er)
+            return self._load_metrics()
         self._launch_processes(self._input_files, self._config)
         return self._load_metrics()
 
