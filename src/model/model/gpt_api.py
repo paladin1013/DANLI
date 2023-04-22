@@ -17,7 +17,24 @@ class GPTAPI:
         self.logger.setLevel(log_level)
         self.logger.addHandler(logging.StreamHandler(sys.stdout))
         
-        
+    def check_connectivity(self):
+        self.logger.debug(f"Checking gpt api connectivity")
+        chat_messages = []
+        chat_messages.append(
+            {
+                'role':'user',
+                'content':"Please reply yes if everything is ok."
+            })
+        completion = openai.ChatCompletion.create(
+            model=self.model,
+            messages = chat_messages,
+            temperature=0.1)
+        completion = cast(Dict[str, List[Dict[str, Dict[str, str]]]], completion)
+        reply:str = completion['choices'][0]['message']['content']
+        self.logger.debug(f"Received reply:\n{reply}\n")
+        if reply:
+            return True
+        return False
     def send(self, messages:List[str]):
         replies:List[str] = []
         chat_messages = []

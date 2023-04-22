@@ -40,7 +40,7 @@ class LLMSubgoalPredictor:
             name = key.split('|')[0]
             if name not in valid_objects:
                 valid_objects.append(name)
-            dist = value['distance']
+            # dist = value['distance']
             if 'receptacleObjectIds' in value.keys():
                 recept_names = [recept_str.split('|')[0] for recept_str in value['receptacleObjectIds']]
                 # Remove replicated elements in recept_names
