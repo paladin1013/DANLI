@@ -9,10 +9,11 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 openai.proxy = {"http":"http://localhost:7890", "https":"https://localhost:7890"}
 
 class GPTAPI:
-    def __init__(self, provider="openai", model="gpt-3.5-turbo", log_level=logging.INFO):
+    def __init__(self, provider="openai", model="gpt-3.5-turbo", log_level=logging.INFO, temperature=0):
         self.messages = []
         self.provider = provider
         self.model = model
+        self.temperature = temperature
         self.logger = logging.getLogger("gpt_api")
         self.logger.setLevel(log_level)
         self.logger.addHandler(logging.StreamHandler(sys.stdout))
@@ -28,7 +29,7 @@ class GPTAPI:
         completion = openai.ChatCompletion.create(
             model=self.model,
             messages = chat_messages,
-            temperature=0.1)
+            temperature=self.temperature)
         completion = cast(Dict[str, List[Dict[str, Dict[str, str]]]], completion)
         reply:str = completion['choices'][0]['message']['content']
         self.logger.debug(f"Received reply:\n{reply}\n")

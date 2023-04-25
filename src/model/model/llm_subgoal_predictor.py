@@ -25,7 +25,7 @@ class ActionType(Enum):
 
 class LLMSubgoalPredictor:
     def __init__(self):
-        self.gpt_api = GPTAPI(log_level=logging.DEBUG)
+        self.gpt_api = GPTAPI()
         self.explanation_level = "brief"
         self.logger = logging.getLogger("subgoal_predictor")
         

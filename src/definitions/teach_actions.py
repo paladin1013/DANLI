@@ -283,7 +283,7 @@ INTERACTION_APPLICABILITY = {
     "Slice": {"Apple", "Bread", "Egg", "Lettuce", "Potato", "Tomato"},
     "Pour": {
         "Bottle",
-        "Bowl",
+        "Bowl", 
         "Cup",
         "HousePlant",
         "Kettle",
