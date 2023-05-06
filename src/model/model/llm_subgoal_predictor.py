@@ -16,6 +16,10 @@ class Operation(Enum):
     Slice = 6
     Boil = 7
     FillWithCoffee = 8
+    Open = 9
+    Close = 10
+    ToggleOn = 11
+    ToggleOff = 12
 
 
 class ActionType(Enum):
@@ -27,6 +31,7 @@ class LLMSubgoalPredictor:
     def __init__(self):
         self.gpt_api = GPTAPI()
         self.explanation_level = "brief"
+        self.ignore_invalid = True
         self.logger = logging.getLogger("subgoal_predictor")
         
     def parse_edh_data(self, edh_raw, text_dialog_and_act):
@@ -78,22 +83,35 @@ class LLMSubgoalPredictor:
         return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}"
 
     def gen_formatting_prompt(self):
-        return "Please format your predicted subgoals with format 'Manipulate(object, operation)' or 'Place(object, receptacle)' and remove the explanations. object, operation and receptacle can be any one of the valid items above.\nFor example:\n1. Manipulate(PickUp, Knife)\n2. Place(Knife, Sink)"
+        return "Please format your predicted subgoals with format 'Manipulate(operation, object)' or 'Place(object, receptacle)' and remove the explanations. object, operation and receptacle can be any one of the valid items above.\nFor example:\n1. Manipulate(PickUp, Knife)\n2. Place(Knife, Sink)"
 
     def match_terms(self, input_str: str, input_type: str):
         if input_type == "object":
             enums = GoalArguments
         elif input_type == "operation":
-            enums = GoalConditions
+            # Some manual alignments
+            input_str.replace("Turn", "Toggle")
+            input_str.replace("Operate", "ToggleOn")
+            input_str.replace("Rinse", "Clean")
+            enums = Operation
         elif input_type == "receptacle":
             enums = GoalReceptacles
+        elif input_type == "goal_condition":
+            enums = GoalConditions
         else:
             raise (
                 ValueError(
-                    f"input_type should be one of 'object', 'operation', 'receptacle', but got {input_type} instead."
+                    f"input_type should be one of 'object', 'goal_condition', 'operation', 'receptacle', but got {input_type} instead."
                 )
             )
         valid_list = [item.name for item in enums]
+        if input_type == "goal_condition":
+            valid_list_trimmed = [goal.replace("simbotIs", "").replace("is", "") for goal in valid_list]
+            valid = get_close_matches(input_str, valid_list_trimmed, n=1)
+            if not valid:
+                raise (ValueError(f"{input_str} cannot match a valid {input_type}."))
+            return enums[valid_list_trimmed.index(valid)]
+
         valid = get_close_matches(input_str, valid_list, n=1)
         if not valid:
             raise (ValueError(f"{input_str} cannot match a valid {input_type}."))
@@ -109,33 +127,51 @@ class LLMSubgoalPredictor:
         for line in gpt_reply.splitlines():
             # Match the format "1. Manipulate(PickUp, Knife)" with ascending idx
             # TODO: add more checks to make sure the format is correct
-            if "Manipulate" in line:
-                operation, object = line.split("(")[1].split(")")[0].split(", ")
-                operation = self.match_terms(operation, "operation")
-                object = self.match_terms(object, "object")
-                subgoals.append((ActionType.Manipulate, operation, object))
+            try:
+                if "Manipulate" in line:
+                    try:
+                        # In case GPT made the wrong order because of error prompts
+                        operation, object = line.split("(")[1].split(")")[0].split(", ")
+                        operation = self.match_terms(operation, "operation")
+                        object = self.match_terms(object, "object")
+                    except ValueError as e:
+                        # Swap the orders of object and operation
+                        object, operation = line.split("(")[1].split(")")[0].split(", ")
+                        operation = self.match_terms(operation, "operation")
+                        object = self.match_terms(object, "object")
+                            
+                    subgoals.append((ActionType.Manipulate, operation, object))
 
-            elif "Place" in line:
-                object, receptacle = line.split("(")[1].split(")")[0].split(", ")
-                object = self.match_terms(object, "object")
-                receptacle = self.match_terms(receptacle, "receptacle")
-                subgoals.append((ActionType.Place, object, receptacle))
-
+                elif "Place" in line:
+                    object, receptacle = line.split("(")[1].split(")")[0].split(", ")
+                    object = self.match_terms(object, "object")
+                    receptacle = self.match_terms(receptacle, "receptacle")
+                    subgoals.append((ActionType.Place, object, receptacle))
+            except ValueError as e:
+                if self.ignore_invalid:
+                    self.logger.warning(f"Parsing instruction {line}: {str(e)}")
+                    continue
+                
         if output_style == "new":
             return subgoals
         elif output_style == "DANLI":
             subgoals_DANLI = []
             for subgoal in subgoals:
-                if subgoal[0] == ActionType.Manipulate:
-                    operation = self.match_terms(subgoal[1].name, "operation")
-                    object = self.match_terms(subgoal[2].name, "object")
-                    subgoals_DANLI.append((operation, object, GoalReceptacles.NONE))
-                elif subgoal[0] == ActionType.Place:
-                    object = self.match_terms(subgoal[1].name, "object")
-                    receptacle = self.match_terms(subgoal[1].name, "receptacle")
-                    subgoals_DANLI.append(
-                        (GoalConditions.parentReceptacles, object, receptacle)
-                    )
+                try:
+                    if subgoal[0] == ActionType.Manipulate:
+                        operation = self.match_terms(subgoal[1].name, "operation")
+                        object = self.match_terms(subgoal[2].name, "object")
+                        subgoals_DANLI.append((operation, object, GoalReceptacles.NONE))
+                    elif subgoal[0] == ActionType.Place:
+                        object = self.match_terms(subgoal[1].name, "object")
+                        receptacle = self.match_terms(subgoal[2].name, "receptacle")
+                        subgoals_DANLI.append(
+                            (GoalConditions.parentReceptacles, object, receptacle)
+                        )
+                except ValueError as e:
+                    if self.ignore_invalid:
+                        self.logger.warning(f"Parsing subgoal for DANLI output {subgoal}: {str(e)}")
+                        continue
             subgoals_DANLI.append(
                 (GoalConditions.EOS, GoalArguments.NONE, GoalReceptacles.NONE)
             )
