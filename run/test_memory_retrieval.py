@@ -55,20 +55,30 @@ import json
 
 
 GPT_RESULT_ROOT = "teach-dataset/gpt_data"
-MERGED_OUTPUT = "merged_output_test.json"
+MERGED_OUTPUT = "merged_output.json"
+EMBEDDINGS = "text_dialog_and_act_embeddings.npy"
 
 with open(f"{GPT_RESULT_ROOT}/{MERGED_OUTPUT}", "r") as f:
     data_all = json.load(f)
 
-corpus = []
-for item in data_all:
-    corpus.append(["Represent the household work dialogue",item['text_dialog_and_act']])
+# corpus = []
+# for item in data_all:
+#     corpus.append(["Represent the household work dialogue",item['text_dialog_and_act']])
 
-corpus_embeddings = model.encode(corpus)
-    
-query = [["Represent the household work requirement", "I would like to wash some dishes."]]
-query_embeddings = model.encode(query)
-    
-similarities = cosine_similarity(query_embeddings,corpus_embeddings)
-retrieved_doc_id = np.argmax(similarities)
-print(retrieved_doc_id)
+# corpus_embeddings = model.encode(corpus)
+# np.save(f"{GPT_RESULT_ROOT}/{EMBEDDINGS}", corpus_embeddings)
+
+with open(f"{GPT_RESULT_ROOT}/{EMBEDDINGS}", "rb") as f:
+    corpus_embeddings = np.load(f, allow_pickle=True)
+
+while True:
+    requirement = input("Please input the query requirement")
+    query = [["Represent the household work requirement", requirement]]
+    query_embeddings = model.encode(query)
+        
+    similarities = cosine_similarity(query_embeddings,corpus_embeddings)
+    retrieved_doc_ids = similarities.reshape(-1).argsort()[-5:][::-1]
+
+    for k, id in enumerate(retrieved_doc_ids):
+        print(f"================== Closest: {k} ==================")
+        print(data_all[id]['text_dialog_and_act'])
