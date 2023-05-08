@@ -30,32 +30,44 @@ class TaskMemoryManager:
         """Load task dialogue and groundtruth subgoals from raw edh files and save them to a memory json file"""
         edh_data = defaultdict(dict)
         data_dir = f"{self.data_root_dir}/edh_instances/{self.memory_split}"
+        with open(f"{self.data_root_dir}/processed_20220610/games_gt_subgoals.json") as f:
+            processed_data = json.load(f)
         for path in os.listdir(data_dir):
             self.logger.debug(f"loading edh file name: {path}")
             with open(f"{data_dir}/{path}", "r") as f:
                 temp_data = json.load(f)
             edh_num = int(re.match(".+\.edh(\d+)", temp_data["instance_id"]).group(1))
+            
             new_edh_session = {}
+            
+            if "edh_to_gt_subgoal_idx" not in processed_data[temp_data["game_id"]].keys():
+                self.logger.debug(f"game {temp_data['game_id']} does not have processed subgoal. Skipped.")
+                continue
+            
+            subgoal_indices = processed_data[temp_data["game_id"]]["edh_to_gt_subgoal_idx"][f"edh{edh_num}"]
+            new_edh_session["processed_subgoals"] = []
+            for index in subgoal_indices:
+                new_edh_session["processed_subgoals"].append(processed_data[temp_data["game_id"]]["gt_all_subgoals"][index])
 
-            new_edh_session["future_subgoals"] = []
+            new_edh_session["future_actions"] = []
             for k in range(len(temp_data["future_subgoals"]) // 2):
                 action = temp_data["future_subgoals"][2 * k]
                 if action == "Navigate":
                     # Exclude navigation in subgoal planning. Whether to navigate should be done when completing subgoals
                     continue
                 else:
-                    new_edh_session["future_subgoals"].append(
+                    new_edh_session["future_actions"].append(
                         [action, temp_data["future_subgoals"][2 * k + 1]]
                     )
 
-            new_edh_session["history_subgoals"] = []
+            new_edh_session["history_actions"] = []
             for k in range(len(temp_data["history_subgoals"]) // 2):
                 action = temp_data["history_subgoals"][2 * k]
                 if action == "Navigate":
                     # Exclude navigation in subgoal planning. Whether to navigate should be done when completing subgoals
                     continue
                 else:
-                    new_edh_session["history_subgoals"].append(
+                    new_edh_session["history_actions"].append(
                         [action, temp_data["history_subgoals"][2 * k + 1]]
                     )
 
@@ -73,25 +85,28 @@ class TaskMemoryManager:
             game_session_sorted = {}
             game_session_sorted["game_id"] = game_id
             game_session_sorted["edh_nums"] = sorted(edh_session.keys())
-            temp_subgoals = []
+            temp_actions = []
             temp_dialog = []
+            temp_subgoals = []
             prev_dialog_len = 0
-            prev_subgoals_len = 0
+            prev_actions_len = 0
             for edh_num in game_session_sorted["edh_nums"]:
-                if len(edh_session[edh_num]["history_subgoals"]) > prev_subgoals_len:
-                    new_subgoals = edh_session[edh_num]["history_subgoals"][prev_subgoals_len:] + edh_session[edh_num]["future_subgoals"]
+                if len(edh_session[edh_num]["history_actions"]) > prev_actions_len:
+                    new_actions = edh_session[edh_num]["history_actions"][prev_actions_len:] + edh_session[edh_num]["future_actions"]
                 else:
-                    new_subgoals = edh_session[edh_num]["future_subgoals"]
-                temp_subgoals.append(new_subgoals)
-                prev_subgoals_len += len(new_subgoals)
+                    new_actions = edh_session[edh_num]["future_actions"]
+                temp_actions.append(new_actions)
+                prev_actions_len += len(new_actions)
                 temp_dialog.append(
                     edh_session[edh_num]["dialog_history"][prev_dialog_len:]
                 )
                 prev_dialog_len = len(edh_session[edh_num]["dialog_history"])
-        
-            game_session_sorted["edh_complete"] = self.update_holding_items(temp_subgoals)
-            game_session_sorted["future_subgoals"] = temp_subgoals
+                temp_subgoals.append(edh_session[edh_num]["processed_subgoals"])
+                
+            game_session_sorted["edh_complete"] = self.update_holding_items(temp_actions)
+            game_session_sorted["action_history"] = temp_actions
             game_session_sorted["dialog_history"] = temp_dialog
+            game_session_sorted["processed_subgoals"] = temp_subgoals
 
             game_data_sorted.append(game_session_sorted)
 
@@ -134,17 +149,19 @@ class TaskMemoryManager:
         """Concatenate dialogue in different edh sessions of a same game instance"""
 
         dialog_history: List[List[str, str]] = game_memory["dialog_history"]
-        future_subgoals: List[List[str, str]] = game_memory["future_subgoals"]
+        processed_subgoals: List[List[str, str]] = game_memory["processed_subgoals"]
         synthesized_dialog_list = []
         synthesized_dialog_and_subgoals_list = []
         subgoal_counter = 0
         for idx, edh_num in enumerate(game_memory["edh_nums"]):
             edh_dialog = dialog_history[idx]
-            edh_subgoals = future_subgoals[idx]
+            edh_subgoals = processed_subgoals[idx]
             synthesized_dialog_list += [f"{role}: {text}" for (role, text) in edh_dialog]
             synthesized_dialog_and_subgoals_list += [f"DIALOG {role}: {text}" for (role, text) in edh_dialog]
             synthesized_dialog_and_subgoals_list.append("")
-            synthesized_dialog_and_subgoals_list += [f"SUBGOAL {subgoal_counter+k}. {action}({target}), holding[{holding}]" for k, (action, target, holding) in enumerate(edh_subgoals)]
+            # synthesized_dialog_and_subgoals_list += [f"SUBGOAL {subgoal_counter+k}. {action}({target}), holding[{holding}]" for k, (action, target, holding) in enumerate(edh_subgoals)]
+            synthesized_dialog_and_subgoals_list += [f"SUBGOAL {subj} {pred} {obj}" if obj else f"SUBGOAL {subj} {pred}" for (subj, pred, obj) in edh_subgoals]
+            synthesized_dialog_and_subgoals_list.append("")
             synthesized_dialog_and_subgoals_list.append("")
             subgoal_counter += len(edh_subgoals)
 
