@@ -16,6 +16,9 @@ manager = TaskMemoryManager(memory_split="train", data_root_dir="teach-dataset",
 # manager.process_memory()
 manager.load_memory()
 manager.query_task_memory("Make sandwich", top_k=5)
+manager.query_task_memory("Wash dishes", top_k=5)
+manager.query_task_memory("Prepare breakfast", top_k=5)
+
 
 # openai.organization = "org-p5ug2Pool5bdCna5a285PeCU"
 # openai.api_key = os.getenv("OPENAI_API_KEY")

@@ -55,39 +55,37 @@ class TaskMemoryManager:
 
             edh_data[temp_data["game_id"]][edh_num] = new_edh_session
 
-        edh_data_sorted = []
+        game_data_sorted = []
 
         for game_id, edh_session in edh_data.items():
-            edh_session_sorted = {}
-            edh_session_sorted["game_id"] = game_id
-            edh_session_sorted["edh_nums"] = sorted(edh_session.keys())
+            self.logger.debug(f"Processing game id {game_id}")
+            game_session_sorted = {}
+            game_session_sorted["game_id"] = game_id
+            game_session_sorted["edh_nums"] = sorted(edh_session.keys())
             temp_subgoals = []
             temp_dialog = []
             prev_dialog_len = 0
-
-            for edh_num in edh_session_sorted["edh_nums"]:
+    
+            for edh_num in game_session_sorted["edh_nums"]:
                 temp_subgoals.append(edh_session[edh_num]["future_subgoals"])
                 temp_dialog.append(
                     edh_session[edh_num]["dialog_history"][prev_dialog_len:]
                 )
                 prev_dialog_len = len(edh_session[edh_num]["dialog_history"])
+        
+            game_session_sorted["edh_complete"] = self.update_holding_items(temp_subgoals)
+            game_session_sorted["future_subgoals"] = temp_subgoals
+            game_session_sorted["dialog_history"] = temp_dialog
 
-            edh_session_sorted["future_subgoals"] = temp_subgoals
-            edh_session_sorted["dialog_history"] = temp_dialog
-            (
-                edh_session_sorted["synthesized_dialog"],
-                edh_session_sorted["synthesized_dialog_and_subgoals"],
-            ) = self.synthesize_edh_sessions(edh_session_sorted)
-
-            edh_data_sorted.append(edh_session_sorted)
+            game_data_sorted.append(game_session_sorted)
 
         with open(
-            f"{self.data_root_dir}/processed_memory/edh_memory_{self.memory_split}.json",
+            f"{self.data_root_dir}/processed_memory/game_memory_{self.memory_split}.json",
             "w",
         ) as f:
-            json.dump(edh_data_sorted, f)
+            json.dump(game_data_sorted, f)
             
-        self.task_memory = edh_data_sorted
+        self.task_memory = game_data_sorted
 
         self.memory_embeddings = self.calc_embeddings(self.task_memory)
         np.save(
@@ -95,7 +93,27 @@ class TaskMemoryManager:
             self.memory_embeddings,
         )
 
-
+    def update_holding_items(self, game_subgoals: List[List[List[str]]]):
+        # subgoals_with_inventory = []
+        holding_item = "Empty"
+        edh_is_complete = True
+        for edh_subgoals in game_subgoals:
+            # edh_subgoals_with_inventory = []
+            for subgoals in edh_subgoals:
+                if subgoals[0] == "Pickup":
+                    if holding_item != "Empty":
+                        self.logger.debug("Pickup when holding item is not empty!")
+                        edh_is_complete = False
+                    holding_item = subgoals[1]
+                elif subgoals[0] == "Place":
+                    if holding_item == "Empty":
+                        self.logger.debug("Place when holding item is empty!")
+                        edh_is_complete = False
+                    holding_item = "Empty"
+                subgoals.append(holding_item)
+                        
+        return edh_is_complete
+        
     def synthesize_edh_sessions(self, game_memory: dict):
         """Concatenate dialogue in different edh sessions of a same game instance"""
 
@@ -108,8 +126,10 @@ class TaskMemoryManager:
             edh_dialog = dialog_history[idx]
             edh_subgoals = future_subgoals[idx]
             synthesized_dialog_list += [f"{role}: {text}" for (role, text) in edh_dialog]
-            synthesized_dialog_and_subgoals_list += [f"{role}: {text}" for (role, text) in edh_dialog]
-            synthesized_dialog_and_subgoals_list += [f"{subgoal_counter+k}. {action}({target})" for k, (action, target) in enumerate(edh_subgoals)]
+            synthesized_dialog_and_subgoals_list += [f"DIALOG {role}: {text}" for (role, text) in edh_dialog]
+            synthesized_dialog_and_subgoals_list.append("")
+            synthesized_dialog_and_subgoals_list += [f"SUBGOAL {subgoal_counter+k}. {action}({target}), holding[{holding}]" for k, (action, target, holding) in enumerate(edh_subgoals)]
+            synthesized_dialog_and_subgoals_list.append("")
             subgoal_counter += len(edh_subgoals)
 
         synthesized_dialog = "\n".join(synthesized_dialog_list)
@@ -122,8 +142,9 @@ class TaskMemoryManager:
             self.model = INSTRUCTOR("hkunlp/instructor-xl")
         corpus = []
         for task in task_memory:
+            synthesized_dialog, _ = self.synthesize_edh_sessions(task)
             corpus.append(
-                ["Represent the household work dialogue", task["synthesized_dialog"]]
+                ["Represent the household work dialogue", synthesized_dialog]
             )
         self.logger.info("Start calculating embeddings")
         corpus_embeddings = self.model.encode(corpus)
@@ -134,7 +155,7 @@ class TaskMemoryManager:
 
     def load_memory(self):
         with open(
-            f"{self.data_root_dir}/processed_memory/edh_memory_{self.memory_split}.json",
+            f"{self.data_root_dir}/processed_memory/game_memory_{self.memory_split}.json",
             "r",
         ) as f:
             self.task_memory = json.load(f)
@@ -153,7 +174,10 @@ class TaskMemoryManager:
         similarities = cosine_similarity(query_embedding, self.memory_embeddings)
 
         retrieved_task_idxes = similarities.reshape(-1).argsort()[-top_k:][::-1]
-        
+        retrieved_tasks = []
         for k, id in enumerate(retrieved_task_idxes):
-            self.logger.debug(f"================== Closest: {k} ==================")
-            self.logger.debug(self.task_memory[id]["synthesized_dialog_and_subgoals"])
+            self.logger.debug(f"\n================== Closest: {k} ==================\n")
+            _, synthesized_dialog_and_subgoals = self.synthesize_edh_sessions(self.task_memory[id])
+            self.logger.debug(synthesized_dialog_and_subgoals)
+            retrieved_tasks.append(self.task_memory[id])
+        return retrieved_tasks
