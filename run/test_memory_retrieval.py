@@ -13,11 +13,11 @@ os.environ["https_proxy"] = "https://localhost:7890"
 
 manager = TaskMemoryManager(memory_split="train", data_root_dir="teach-dataset", log_level=logging.DEBUG)
 
-# manager.process_memory()
+manager.process_memory()
 manager.load_memory()
 manager.query_task_memory("Make sandwich", top_k=5)
 manager.query_task_memory("Wash dishes", top_k=5)
-manager.query_task_memory("Prepare breakfast", top_k=5)
+manager.query_task_memory("Wash apples")
 
 
 # openai.organization = "org-p5ug2Pool5bdCna5a285PeCU"

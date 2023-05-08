@@ -48,6 +48,17 @@ class TaskMemoryManager:
                         [action, temp_data["future_subgoals"][2 * k + 1]]
                     )
 
+            new_edh_session["history_subgoals"] = []
+            for k in range(len(temp_data["history_subgoals"]) // 2):
+                action = temp_data["history_subgoals"][2 * k]
+                if action == "Navigate":
+                    # Exclude navigation in subgoal planning. Whether to navigate should be done when completing subgoals
+                    continue
+                else:
+                    new_edh_session["history_subgoals"].append(
+                        [action, temp_data["history_subgoals"][2 * k + 1]]
+                    )
+
             new_edh_session["dialog_history"] = []
             for dialog in temp_data["dialog_history_cleaned"]:
                 role = dialog[0].replace("Driver", "Robot")
@@ -65,9 +76,14 @@ class TaskMemoryManager:
             temp_subgoals = []
             temp_dialog = []
             prev_dialog_len = 0
-    
+            prev_subgoals_len = 0
             for edh_num in game_session_sorted["edh_nums"]:
-                temp_subgoals.append(edh_session[edh_num]["future_subgoals"])
+                if len(edh_session[edh_num]["history_subgoals"]) > prev_subgoals_len:
+                    new_subgoals = edh_session[edh_num]["history_subgoals"][prev_subgoals_len:] + edh_session[edh_num]["future_subgoals"]
+                else:
+                    new_subgoals = edh_session[edh_num]["future_subgoals"]
+                temp_subgoals.append(new_subgoals)
+                prev_subgoals_len += len(new_subgoals)
                 temp_dialog.append(
                     edh_session[edh_num]["dialog_history"][prev_dialog_len:]
                 )
