@@ -2,24 +2,21 @@ from enum import Enum
 from pprint import pprint
 from typing import Any, Dict, List
 from model.model.gpt_api import GPTAPI
+from model.data.memory_manager import TaskMemoryManager
 import logging
 from definitions.teach_tasks import GoalArguments, GoalReceptacles, GoalConditions
 from difflib import get_close_matches
-
+import json
+from model.utils.data_util import process_edh_for_subgoal_prediction
 
 class Operation(Enum):
     Cook = 1
     Clean = 2
-    PickUp = 3
     FillWithLiquid = 4
     Empty = 5
     Slice = 6
     Boil = 7
     FillWithCoffee = 8
-    Open = 9
-    Close = 10
-    ToggleOn = 11
-    ToggleOff = 12
 
 
 class ActionType(Enum):
@@ -33,6 +30,7 @@ class LLMSubgoalPredictor:
         self.explanation_level = explanation_level
         self.ignore_invalid = ignore_invalid
         self.logger = logging.getLogger("subgoal_predictor")
+        self.memory_manager = TaskMemoryManager(memory_split="train", data_root_dir="teach-dataset")
         
     def parse_edh_data(self, edh_raw, text_dialog_and_act):
         objects = edh_raw['init_state_diff']['objects']
@@ -57,33 +55,61 @@ class LLMSubgoalPredictor:
         edh_session['history'] = text_dialog_and_act
         return edh_session
 
-    def gen_edh_prompt(self, edh_session: Dict[str, Any]):
+    def gen_edh_prompt(self, edh_session: Dict[str, Any], include_memory=True):
         intro = "Suppose you are a household robot and your user will give you some tasks with language instructions. You need to propose some subgoals to complete this goal. Each subgoal can either be a manipulation action or a placing action. For a manipulation action, you need to specify the operation and the object. For a placing action, you need to specify the object and the receptacle. All the possible objects, operations, and receptacles are listed as below. "
 
         objects: List[str] = edh_session["objects"]
         receptacles: Dict[str, List[str]] = edh_session["receptacles"]
         history: str = edh_session["history"]
 
-        objects_str = "Valid objects: " + ", ".join(objects) + ". "
+        objects_str = "Valid <object>: \n" + "\n".join(objects) + "\n"
         operations_str = (
-            "Valid operations: " + ", ".join([op.name for op in Operation]) + ". "
+            "Valid <operation>: \n" + "\n".join([op.name for op in Operation]) + "\n"
         )
 
         receptacles_str = (
-            "Valid receptacles with valid objects in the following bracket: "
+            "Valid <receptacle> with valid <object> in the following bracket: \n"
         )
         for receptacle, valid_objects in receptacles.items():
-            receptacles_str += receptacle + " (" + ", ".join(valid_objects) + "), "
-        receptacles_str += ". "
+            receptacles_str += receptacle + " (" + ", ".join(valid_objects) + ")\n"
 
         history_str = f"Please consider the state after following dialogue and action history.\n{history}"
 
-        end_str = f"Please predict a series of subgoals in the format 'Manipulate (operation, objcect)' or 'Place (object, receptacle)' with {self.explanation_level} explanations. Note that you can only hold one object at a time. You have to place the object you are holding before you can pick up another object."
+        end_str = f"Please predict a series of subgoals in the format 'Manipulate(<operation>, <object>)' or 'Place(<object>, <receptacle>)' for  with {self.explanation_level} explanations. Plese exclude all Manipulate subgoals whose <operation> is not in the operation list."
+        
+        if not include_memory:
+            return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}"
+        
+        retrieved_tasks = self.memory_manager.query_task_memory(history_str)
+        memory_str = "Here are some related examples:\n"
+        for task_idx, task in enumerate(retrieved_tasks):
+            task_str = f"\n<Example {task_idx+1}>:\nDialog:\n"
+            for edh_idx in range(len(task['edh_nums'])):
+                for role, sentence in task['dialog_history'][edh_idx]:
+                    task_str += f"[{role}]: {sentence}\n"
+                        
+            task_str += "\nActions:\n"
+            cnt = 1
+            for edh_idx in range(len(task['edh_nums'])):
+                for subj, pred, obj in task['processed_subgoals'][edh_idx]:
+                    if pred == "isPickedUp":
+                        continue
+                    if pred == "parentReceptacles":
+                        task_str += f"{cnt}. Place({subj}, {obj})\n"
+                    else:
+                        pred = pred.replace("simbotIs", "").replace("is", "")
+                        operation:Operation = self.match_terms(pred, "operation")
+                        task_str += f"{cnt}. Manipulate({operation.name}, {subj})\n"
+                    cnt += 1
+            
+            memory_str += f"{task_str}\n"
+            
+            return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}\n\n{memory_str}"
+            
 
-        return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}"
 
     def gen_formatting_prompt(self):
-        return "Please format your predicted subgoals with format 'Manipulate(operation, object)' or 'Place(object, receptacle)' and remove the explanations. object, operation and receptacle can be any one of the valid items above.\nFor example:\n1. Manipulate(PickUp, Knife)\n2. Place(Knife, Sink)"
+        return "Please format your predicted subgoals with format 'Manipulate(<operation>, <object>)' or 'Place(<object>, <receptacle>)' and remove the explanations. <object>, <operation> and <receptacle> can be any one of the valid items above.\nFor example:\n1. Manipulate(PickUp, Knife)\n2. Place(Knife, Sink)"
 
     def match_terms(self, input_str: str, input_type: str):
         if input_type == "object":
@@ -197,24 +223,12 @@ class LLMSubgoalPredictor:
         )
         subgoals = self.parse_gpt_reply(replies[1])
         return subgoals
+    
+    def load_edh_file(self, file_path:str):
+        with open(f"{file_path}") as f:
+            edh_raw = json.load(f)
+        edh_text, dialog_history = process_edh_for_subgoal_prediction(edh_raw)
+        return edh_raw, edh_text
 
 
-if __name__ == "__main__":
-    predictor = LLMSubgoalPredictor()
-    # edh_session = edh_file_parser(game_id="24ed9868107a2701_c467", edh_id=0)
-    # print(predictor.predict(edh_session))
-
-    test_reply = """1. Place(Potato, CounterTop)
-2. Manipulate(PickUp, Knife)
-3. Manipulate(PickUp, Potato)
-4. Place(Potato, Pot)
-5. Manipulate(PickUp, Potato)
-6. Place(Potato, Pot)
-7. Manipulate(FillWithLiquid, Pot)
-8. Place(Pot, StoveBurner)
-9. Manipulate(Cook, Pot)
-10. Place(Pot, CounterTop)
-11. Manipulate(PickUp, Plate)
-12. Place(Potatoes, Plate)
-"""
-    pprint(predictor.parse_gpt_reply(test_reply))
+    
