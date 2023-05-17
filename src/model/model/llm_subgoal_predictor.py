@@ -40,6 +40,7 @@ class LLMSubgoalPredictor:
         self.ignore_invalid = ignore_invalid
         self.logger = logging.getLogger("subgoal_predictor")
         self.memory_manager = TaskMemoryManager(memory_split="train", data_root_dir="teach-dataset")
+        self.manual_response_dir = "teach-dataset/gpt_data/manual_response"
         
     def parse_edh_data(self, edh_raw, text_dialog_and_act):
         objects = edh_raw['init_state_diff']['objects']
@@ -94,8 +95,10 @@ class LLMSubgoalPredictor:
 
         end_str = f"Please predict a series of subgoals in the format 'Manipulate(<operation>, <object>)' or 'Place(<object>, <receptacle>)' for  with {self.explanation_level} explanations. Plese exclude all Manipulate subgoals whose <operation> is not in the operation list."
         
+        formatting_str = "\n---\nAt the end of your response, please use --- to seperate the final section, and format your predicted subgoals with format 'Manipulate(<operation>, <object>)' or 'Place(<object>, <receptacle>)' and remove the explanations. <object>, <operation> and <receptacle> can be any one of the valid items above.\nFor example:\n1. Manipulate(PickUp, Knife)\n2. Place(Knife, Sink)"
+        
         if example_num <= 0:
-            return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}"
+            return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}\n{formatting_str}"
         
         retrieved_tasks = self.memory_manager.query_task_memory(history_str, top_k=example_num)
         memory_str = "Here are some related examples. Please refer to the subgoals in the example when you predict the subgoals for the new task.\n"
@@ -121,19 +124,14 @@ class LLMSubgoalPredictor:
             
             memory_str += f"{task_str}\n"
             
-            return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}\n\n{memory_str}"
+            return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}\n\n{memory_str}\n{formatting_str}"
             
-
-
-    def gen_formatting_prompt(self):
-        return "Please format your predicted subgoals with format 'Manipulate(<operation>, <object>)' or 'Place(<object>, <receptacle>)' and remove the explanations. <object>, <operation> and <receptacle> can be any one of the valid items above.\nFor example:\n1. Manipulate(PickUp, Knife)\n2. Place(Knife, Sink)"
-
     def match_terms(self, input_str: str, input_type: str):
         if input_type == "object":
             enums = GoalArguments
         elif input_type == "operation":
             # Some manual alignments
-            input_str = input_str.replace("Turn", "Toggle").replace("Operate", "ToggleOn").replace("Rinse", "Clean")
+            input_str = input_str.replace("Empty", "Pour").replace("Emptied", "Pour")
             enums = Operation
         elif input_type == "receptacle":
             enums = GoalReceptacles
@@ -175,7 +173,12 @@ class LLMSubgoalPredictor:
         subgoals = []
         idx = 1
         parse_error = False
-        for line in gpt_reply.splitlines():
+        lines = gpt_reply.splitlines()
+        for idx, line in enumerate(lines):
+            if line == "---":
+                formatted_lines = lines[idx+1:]
+                break
+        for line in formatted_lines:
             # Match the format "1. Manipulate(PickUp, Knife)" with ascending idx
             # TODO: add more checks to make sure the format is correct
             try:
@@ -213,12 +216,12 @@ class LLMSubgoalPredictor:
                     if subgoal[0] == ActionType.Manipulate:
                         operation = self.match_terms(subgoal[1].name, "goal_condition")
                         object = self.match_terms(subgoal[2].name, "object")
-                        subgoals_DANLI.append((operation, object, GoalReceptacles.NONE))
+                        subgoals_DANLI.append((object, operation, GoalReceptacles.NONE))
                     elif subgoal[0] == ActionType.Place:
                         object = self.match_terms(subgoal[1].name, "object")
                         receptacle = self.match_terms(subgoal[2].name, "receptacle")
                         subgoals_DANLI.append(
-                            (GoalConditions.parentReceptacles, object, receptacle)
+                            (object, GoalConditions.parentReceptacles, receptacle)
                         )
                 except ValueError as e:
                     parse_error = True
@@ -226,7 +229,7 @@ class LLMSubgoalPredictor:
                         self.logger.warning(f"Parsing subgoal for DANLI output {subgoal}: {str(e)}")
                         continue
             subgoals_DANLI.append(
-                (GoalConditions.EOS, GoalArguments.NONE, GoalReceptacles.NONE)
+                (GoalArguments.NONE, GoalConditions.EOS, GoalReceptacles.NONE)
             )
             return subgoals_DANLI, parse_error
         else:
@@ -236,9 +239,9 @@ class LLMSubgoalPredictor:
 
     def predict(self, edh_session: Dict[str, Any]):
         replies = self.gpt_api.send(
-            [self.gen_edh_prompt(edh_session), self.gen_formatting_prompt()]
+            [self.gen_edh_prompt(edh_session)]
         )
-        subgoals = self.parse_gpt_reply(replies[1])
+        subgoals = self.parse_gpt_reply(replies[0])
         return subgoals
     
     def load_edh_file(self, file_path:str):
@@ -247,5 +250,24 @@ class LLMSubgoalPredictor:
         edh_text, dialog_history = process_edh_for_subgoal_prediction(edh_raw)
         return edh_raw, edh_text
 
+    def save_manual_response(self, file_name, prompt=""):
+        """For GPT4 without an API: 
+        Manually copy the respond from the openai website to obtain the subgoals"""
+        print("Please paste the response from the openai website here and input `done` to stop:")
+        manual_response = []
+        while True:
+            new_input = input()
+            if new_input == "done":
+                break
+            manual_response.append(new_input)
+        with open(f"{self.manual_response_dir}/{file_name}.json", "w") as f:
+            json.dump({"prompt": prompt, "response": "\n".join(manual_response)}, f)
+        
+    def load_manual_response(self, file_name):
+        """ For GPT4 without an API:
+        Load the response from the manual file"""
+        with open(f"{self.manual_response_dir}/{file_name}.json", "r") as f:
+            manual_response = json.load(f)["response"]
+        return manual_response
 
     
