@@ -13,11 +13,20 @@ class Operation(Enum):
     Cook = 1
     Clean = 2
     FillWithLiquid = 4
-    Empty = 5
+    Pour = 5
     Slice = 6
     Boil = 7
     FillWithCoffee = 8
 
+OPERATION_EXPLANATION = {
+    Operation.Cook: "General abstraction for toast and cook, objects can be BreadSliced, EggCracked Potato and PotatoSliced if any is available in the present senario.",
+    Operation.Clean: "Clean an <object> that may be dirty.",
+    Operation.FillWithLiquid: "Fill a Bottle-like <object> with water, e.g. fill the cup with water.",
+    Operation.Pour: "Pour a Bottle-like <object>.",
+    Operation.Slice: "Slice an <object>, including Apple Bread Egg Lettuce Potato Tomato if any is available in the present senario. New <object>Sliced will be created after this operation, which can be used for future subgoal prediction.",
+    Operation.Boil: "Specifically used for boiling an EggCracked.",
+    Operation.FillWithCoffee: "Fill a Bottle-like <object> with coffee."
+}
 
 class ActionType(Enum):
     Manipulate = 0
@@ -55,8 +64,16 @@ class LLMSubgoalPredictor:
         edh_session['history'] = text_dialog_and_act
         return edh_session
 
-    def gen_edh_prompt(self, edh_session: Dict[str, Any], include_memory=True):
-        intro = "Suppose you are a household robot and your user will give you some tasks with language instructions. You need to propose some subgoals to complete this goal. Each subgoal can either be a manipulation action or a placing action. For a manipulation action, you need to specify the operation and the object. For a placing action, you need to specify the object and the receptacle. All the possible objects, operations, and receptacles are listed as below. "
+    def gen_edh_prompt(self, edh_session: Dict[str, Any], example_num=1):
+        """Generate the prompt for the subgoal prediction task.
+        Args:
+            edh_session (Dict[str, Any]): The edh session data.
+            example_num (int): The number of related tasks to include in the prompt.
+        Returns:
+            str: The prompt for the subgoal prediction task.
+        """
+        
+        intro = "Suppose you are a household robot and your user will give you some tasks with language instructions. You need to propose some subgoals to complete this goal. Each subgoal can either be a <Manipulate> action or a <Place> action. Manipulate(<operation> ,<object>) means to apply an <operation> to the <object>. Place(<object>, <receptacle>) means to put the <object> in or on the <receptacle>. Note that if you place an <object> into a <receptacle>, it will be automatically removed from its previous <receptacle>. All the possible <objects>, <operations>, and <receptacles> are listed as below. "
 
         objects: List[str] = edh_session["objects"]
         receptacles: Dict[str, List[str]] = edh_session["receptacles"]
@@ -64,7 +81,7 @@ class LLMSubgoalPredictor:
 
         objects_str = "Valid <object>: \n" + "\n".join(objects) + "\n"
         operations_str = (
-            "Valid <operation>: \n" + "\n".join([op.name for op in Operation]) + "\n"
+            "Valid <operation>: \n" + "\n".join([f"{op.name}: {OPERATION_EXPLANATION[op]}" for op in Operation]) + "\n"
         )
 
         receptacles_str = (
@@ -77,11 +94,11 @@ class LLMSubgoalPredictor:
 
         end_str = f"Please predict a series of subgoals in the format 'Manipulate(<operation>, <object>)' or 'Place(<object>, <receptacle>)' for  with {self.explanation_level} explanations. Plese exclude all Manipulate subgoals whose <operation> is not in the operation list."
         
-        if not include_memory:
+        if example_num <= 0:
             return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}"
         
-        retrieved_tasks = self.memory_manager.query_task_memory(history_str)
-        memory_str = "Here are some related examples:\n"
+        retrieved_tasks = self.memory_manager.query_task_memory(history_str, top_k=example_num)
+        memory_str = "Here are some related examples. Please refer to the subgoals in the example when you predict the subgoals for the new task.\n"
         for task_idx, task in enumerate(retrieved_tasks):
             task_str = f"\n<Example {task_idx+1}>:\nDialog:\n"
             for edh_idx in range(len(task['edh_nums'])):

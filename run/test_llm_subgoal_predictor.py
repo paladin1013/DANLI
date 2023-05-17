@@ -6,4 +6,4 @@ predictor = LLMSubgoalPredictor()
 edh_file_path = "teach-dataset/edh_instances/valid_unseen/0b42b1e6a5ad92ee_8867.edh4.json"
 edh_raw, edh_text = predictor.load_edh_file(edh_file_path)
 edh_input = predictor.parse_edh_data(edh_raw, edh_text["text_dialog_and_act"])
-print(predictor.gen_edh_prompt(edh_input))
+print(predictor.gen_edh_prompt(edh_input, example_num=0))

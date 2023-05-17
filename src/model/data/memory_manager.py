@@ -25,6 +25,7 @@ class TaskMemoryManager:
         self.logger.addHandler(logging.StreamHandler(sys.stdout))
         self.logger.setLevel(log_level)
         self.model = None
+        self.memory_embeddings = None
 
     def process_memory(self):
         """Load task dialogue and groundtruth subgoals from raw edh files and save them to a memory json file"""
@@ -150,17 +151,19 @@ class TaskMemoryManager:
 
         dialog_history: List[List[str, str]] = game_memory["dialog_history"]
         processed_subgoals: List[List[str, str]] = game_memory["processed_subgoals"]
+        action_history: List[List[str, str]] = game_memory["action_history"]
         synthesized_dialog_list = []
         synthesized_dialog_and_subgoals_list = []
         subgoal_counter = 0
         for idx, edh_num in enumerate(game_memory["edh_nums"]):
             edh_dialog = dialog_history[idx]
             edh_subgoals = processed_subgoals[idx]
+            edh_actions = action_history[idx]
             synthesized_dialog_list += [f"{role}: {text}" for (role, text) in edh_dialog]
             synthesized_dialog_and_subgoals_list += [f"DIALOG {role}: {text}" for (role, text) in edh_dialog]
             synthesized_dialog_and_subgoals_list.append("")
-            # synthesized_dialog_and_subgoals_list += [f"SUBGOAL {subgoal_counter+k}. {action}({target}), holding[{holding}]" for k, (action, target, holding) in enumerate(edh_subgoals)]
             synthesized_dialog_and_subgoals_list += [f"SUBGOAL {subj} {pred} {obj}" if obj else f"SUBGOAL {subj} {pred}" for (subj, pred, obj) in edh_subgoals]
+            synthesized_dialog_and_subgoals_list += [f"ACTION {subgoal_counter+k}. {action}({target}), holding[{holding}]" for k, (action, target, holding) in enumerate(edh_actions)]
             synthesized_dialog_and_subgoals_list.append("")
             synthesized_dialog_and_subgoals_list.append("")
             subgoal_counter += len(edh_subgoals)
@@ -202,6 +205,10 @@ class TaskMemoryManager:
     def query_task_memory(self, description:str, top_k:int=1):
         if not self.model:
             self.model = INSTRUCTOR("hkunlp/instructor-xl")
+            
+        if self.memory_embeddings is None:
+            self.load_memory()
+            
         query = [["Represent the household work requirement", description]]
         query_embedding = self.model.encode(query)
         similarities = cosine_similarity(query_embedding, self.memory_embeddings)
