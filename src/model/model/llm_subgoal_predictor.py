@@ -4,29 +4,9 @@ from typing import Any, Dict, List
 from model.model.gpt_api import GPTAPI
 from model.data.memory_manager import TaskMemoryManager
 import logging
-from definitions.teach_tasks import GoalArguments, GoalReceptacles, GoalConditions
-from difflib import get_close_matches
+from definitions.teach_tasks import GoalArguments, GoalReceptacles, GoalConditions, Operation, OPERATION_EXPLANATION
 import json
-from model.utils.data_util import process_edh_for_subgoal_prediction
-
-class Operation(Enum):
-    Cook = 1
-    Clean = 2
-    FillWithLiquid = 4
-    Pour = 5
-    Slice = 6
-    Boil = 7
-    FillWithCoffee = 8
-
-OPERATION_EXPLANATION = {
-    Operation.Cook: "General abstraction for toast and cook, objects can be BreadSliced, EggCracked Potato and PotatoSliced if any is available in the present senario.",
-    Operation.Clean: "Clean an <object> that may be dirty.",
-    Operation.FillWithLiquid: "Fill a Bottle-like <object> with water, e.g. fill the cup with water.",
-    Operation.Pour: "Pour a Bottle-like <object>.",
-    Operation.Slice: "Slice an <object>, including Apple Bread Egg Lettuce Potato Tomato if any is available in the present senario. New <object>Sliced will be created after this operation, which can be used for future subgoal prediction.",
-    Operation.Boil: "Specifically used for boiling an EggCracked.",
-    Operation.FillWithCoffee: "Fill a Bottle-like <object> with coffee."
-}
+from model.utils.format_utils import match_terms
 
 class ActionType(Enum):
     Manipulate = 0
@@ -42,28 +22,6 @@ class LLMSubgoalPredictor:
         self.memory_manager = TaskMemoryManager(memory_split="train", data_root_dir="teach-dataset")
         self.manual_response_dir = "teach-dataset/gpt_data/manual_response"
         
-    def parse_edh_data(self, edh_raw, text_dialog_and_act):
-        objects = edh_raw['init_state_diff']['objects']
-        
-        text_dialog_and_act = text_dialog_and_act
-        
-        valid_objects:List[str] = []
-        valid_receptacles:Dict[str, List[str]] = {}
-        for key, value in objects.items():
-            name = key.split('|')[0]
-            if name not in valid_objects:
-                valid_objects.append(name)
-            # dist = value['distance']
-            if 'receptacleObjectIds' in value.keys():
-                recept_names = [recept_str.split('|')[0] for recept_str in value['receptacleObjectIds']]
-                # Remove replicated elements in recept_names
-                recept_names = list(set(recept_names))
-                valid_receptacles.update({name: recept_names})
-        edh_session = {}
-        edh_session['objects'] = valid_objects
-        edh_session['receptacles'] = valid_receptacles
-        edh_session['history'] = text_dialog_and_act
-        return edh_session
 
     def gen_edh_prompt(self, edh_session: Dict[str, Any], example_num=1):
         """Generate the prompt for the subgoal prediction task.
@@ -101,60 +59,11 @@ class LLMSubgoalPredictor:
             return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}\n{formatting_str}"
         
         retrieved_tasks = self.memory_manager.query_task_memory(history_str, top_k=example_num)
-        memory_str = "Here are some related examples. Please refer to the subgoals in the example when you predict the subgoals for the new task.\n"
-        for task_idx, task in enumerate(retrieved_tasks):
-            task_str = f"\n<Example {task_idx+1}>:\nDialog:\n"
-            for edh_idx in range(len(task['edh_nums'])):
-                for role, sentence in task['dialog_history'][edh_idx]:
-                    task_str += f"[{role}]: {sentence}\n"
-                        
-            task_str += "\nActions:\n"
-            cnt = 1
-            for edh_idx in range(len(task['edh_nums'])):
-                for subj, pred, obj in task['processed_subgoals'][edh_idx]:
-                    if pred == "isPickedUp":
-                        continue
-                    if pred == "parentReceptacles":
-                        task_str += f"{cnt}. Place({subj}, {obj})\n"
-                    else:
-                        pred = pred.replace("simbotIs", "").replace("is", "")
-                        operation:Operation = self.match_terms(pred, "operation")
-                        task_str += f"{cnt}. Manipulate({operation.name}, {subj})\n"
-                    cnt += 1
+        memory_str = self.memory_manager.generate_fewshot_prompt(retrieved_tasks)
+        
+        return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}\n\n{memory_str}\n{formatting_str}"
             
-            memory_str += f"{task_str}\n"
-            
-            return f"{intro}\n\n{objects_str}\n\n{operations_str}\n\n{receptacles_str}\n\n{history_str}\n\n{end_str}\n\n{memory_str}\n{formatting_str}"
-            
-    def match_terms(self, input_str: str, input_type: str):
-        if input_type == "object":
-            enums = GoalArguments
-        elif input_type == "operation":
-            # Some manual alignments
-            input_str = input_str.replace("Empty", "Pour").replace("Emptied", "Pour")
-            enums = Operation
-        elif input_type == "receptacle":
-            enums = GoalReceptacles
-        elif input_type == "goal_condition":
-            enums = GoalConditions
-        else:
-            raise (
-                ValueError(
-                    f"input_type should be one of 'object', 'goal_condition', 'operation', 'receptacle', but got {input_type} instead."
-                )
-            )
-        valid_list = [item.name for item in enums]
-        if input_type == "goal_condition":
-            valid_list_trimmed = [goal.replace("simbotIs", "").replace("is", "") for goal in valid_list]
-            valid = get_close_matches(input_str, valid_list_trimmed, n=1)
-            if not valid:
-                raise (ValueError(f"{input_str} cannot match a valid {input_type}."))
-            return enums(valid_list_trimmed.index(valid[0]))
 
-        valid = get_close_matches(input_str, valid_list, n=1)
-        if not valid:
-            raise (ValueError(f"{input_str} cannot match a valid {input_type}."))
-        return enums[valid[0]]
 
     def parse_gpt_reply_to_str(self, gpt_reply: str):
         subgoals, parse_error = self.parse_gpt_reply(gpt_reply=gpt_reply)
@@ -186,20 +95,20 @@ class LLMSubgoalPredictor:
                     try:
                         # In case GPT made the wrong order because of error prompts
                         operation, object = line.split("(")[1].split(")")[0].split(", ")
-                        operation = self.match_terms(operation, "operation")
-                        object = self.match_terms(object, "object")
+                        operation = match_terms(operation, "operation")
+                        object = match_terms(object, "object")
                     except ValueError as e:
                         # Swap the orders of object and operation
                         object, operation = line.split("(")[1].split(")")[0].split(", ")
-                        operation = self.match_terms(operation, "operation")
-                        object = self.match_terms(object, "object")
+                        operation = match_terms(operation, "operation")
+                        object = match_terms(object, "object")
                             
                     subgoals.append((ActionType.Manipulate, operation, object))
 
                 elif "Place" in line:
                     object, receptacle = line.split("(")[1].split(")")[0].split(", ")
-                    object = self.match_terms(object, "object")
-                    receptacle = self.match_terms(receptacle, "receptacle")
+                    object = match_terms(object, "object")
+                    receptacle = match_terms(receptacle, "receptacle")
                     subgoals.append((ActionType.Place, object, receptacle))
             except ValueError as e:
                 parse_error = True
@@ -214,12 +123,12 @@ class LLMSubgoalPredictor:
             for subgoal in subgoals:
                 try:
                     if subgoal[0] == ActionType.Manipulate:
-                        operation = self.match_terms(subgoal[1].name, "goal_condition")
-                        object = self.match_terms(subgoal[2].name, "object")
+                        operation = match_terms(subgoal[1].name, "goal_condition")
+                        object = match_terms(subgoal[2].name, "object")
                         subgoals_DANLI.append((object, operation, GoalReceptacles.NONE))
                     elif subgoal[0] == ActionType.Place:
-                        object = self.match_terms(subgoal[1].name, "object")
-                        receptacle = self.match_terms(subgoal[2].name, "receptacle")
+                        object = match_terms(subgoal[1].name, "object")
+                        receptacle = match_terms(subgoal[2].name, "receptacle")
                         subgoals_DANLI.append(
                             (object, GoalConditions.parentReceptacles, receptacle)
                         )
@@ -243,12 +152,6 @@ class LLMSubgoalPredictor:
         )
         subgoals = self.parse_gpt_reply(replies[0])
         return subgoals
-    
-    def load_edh_file(self, file_path:str):
-        with open(f"{file_path}") as f:
-            edh_raw = json.load(f)
-        edh_text, dialog_history = process_edh_for_subgoal_prediction(edh_raw)
-        return edh_raw, edh_text
 
     def save_manual_response(self, file_name, prompt=""):
         """For GPT4 without an API: 

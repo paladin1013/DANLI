@@ -362,3 +362,24 @@ class GoalReceptacles(Enum):
 # for idx, o in enumerate(receps):
 #     strr += "%s = %d\n"%(o, idx)
 # print(strr)
+
+
+
+class Operation(Enum):
+    Cook = 1
+    Clean = 2
+    FillWithLiquid = 4
+    Pour = 5
+    Slice = 6
+    Boil = 7
+    FillWithCoffee = 8
+
+OPERATION_EXPLANATION = {
+    Operation.Cook: "General abstraction for toast and cook, objects can be BreadSliced, EggCracked Potato and PotatoSliced if any is available in the present senario.",
+    Operation.Clean: "Clean an <object> that may be dirty.",
+    Operation.FillWithLiquid: "Fill a Bottle-like <object> with water, e.g. fill the cup with water.",
+    Operation.Pour: "Pour a Bottle-like <object>.",
+    Operation.Slice: "Slice an <object>, including Apple Bread Egg Lettuce Potato Tomato if any is available in the present senario. New <object>Sliced will be created after this operation, which can be used for future subgoal prediction.",
+    Operation.Boil: "Specifically used for boiling an EggCracked.",
+    Operation.FillWithCoffee: "Fill a Bottle-like <object> with coffee."
+}

@@ -1,14 +1,14 @@
 from model.model.llm_subgoal_predictor import LLMSubgoalPredictor
 import json
-
+from model.utils.format_utils import parse_edh_data, load_edh_file
 predictor = LLMSubgoalPredictor()
 # edh_session = edh_file_parser(game_id="24ed9868107a2701_c467", edh_id=0)
 game_id = "345624f0e74dc947_8525"
 edh_num = 5
 
 edh_file_path = f"teach-dataset/edh_instances/valid_unseen/{game_id}.edh{edh_num}.json"
-edh_raw, edh_text = predictor.load_edh_file(edh_file_path)
-edh_input = predictor.parse_edh_data(edh_raw, edh_text["text_dialog_and_act"])
+edh_raw, edh_text = load_edh_file(edh_file_path)
+edh_input = parse_edh_data(edh_raw, edh_text["text_dialog_and_act"])
 example_num = 3
 prompt = predictor.gen_edh_prompt(edh_input, example_num=example_num)
 print(prompt)

@@ -10,6 +10,8 @@ from InstructorEmbedding import INSTRUCTOR
 import numpy as np
 from typing import List
 from sklearn.metrics.pairwise import cosine_similarity
+from model.utils.format_utils import match_terms
+from definitions.teach_tasks import Operation
 
 
 class TaskMemoryManager:
@@ -26,6 +28,14 @@ class TaskMemoryManager:
         self.logger.setLevel(log_level)
         self.model = None
         self.memory_embeddings = None
+        
+    def retrieve_game_memory(self, game_id: str):
+        """Retrieve memory of a specific game session"""
+        if self.task_memory is None:
+            self.load_memory()
+        for task in self.task_memory:
+            if task["game_id"] == game_id:
+                return task
 
     def process_memory(self):
         """Load task dialogue and groundtruth subgoals from raw edh files and save them to a memory json file"""
@@ -172,7 +182,31 @@ class TaskMemoryManager:
         synthesized_dialog_and_subgoals = "\n".join(synthesized_dialog_and_subgoals_list)
         return synthesized_dialog, synthesized_dialog_and_subgoals
 
-
+    def generate_fewshot_prompt(self, retrieved_tasks):
+        memory_str = "Here are some related examples. Please refer to the subgoals in the example when you predict the subgoals for the new task.\n"
+        for task_idx, task in enumerate(retrieved_tasks):
+            task_str = f"\n<Example {task_idx+1}>:\nDialog:\n"
+            for edh_idx in range(len(task['edh_nums'])):
+                for role, sentence in task['dialog_history'][edh_idx]:
+                    task_str += f"[{role}]: {sentence}\n"
+                        
+            task_str += "\nActions:\n"
+            cnt = 1
+            for edh_idx in range(len(task['edh_nums'])):
+                for subj, pred, obj in task['processed_subgoals'][edh_idx]:
+                    if pred == "isPickedUp":
+                        continue
+                    if pred == "parentReceptacles":
+                        task_str += f"{cnt}. Place({subj}, {obj})\n"
+                    else:
+                        pred = pred.replace("simbotIs", "").replace("is", "")
+                        operation:Operation = match_terms(pred, "operation")
+                        task_str += f"{cnt}. Manipulate({operation.name}, {subj})\n"
+                    cnt += 1
+            
+            memory_str += f"{task_str}\n"
+        return memory_str
+    
     def calc_embeddings(self, task_memory):
         if not self.model:
             self.model = INSTRUCTOR("hkunlp/instructor-xl")
