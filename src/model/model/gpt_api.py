@@ -4,6 +4,8 @@ import sys
 from typing import List, Dict, cast
 import openai
 import logging
+import jsonlines
+from tqdm import tqdm
 openai.organization = "org-p5ug2Pool5bdCna5a285PeCU"
 openai.api_key = os.getenv("OPENAI_API_KEY")
 openai.proxy = {"http":"http://localhost:7890", "https":"https://localhost:7890"}
@@ -63,6 +65,21 @@ class GPTAPI:
                     'content':reply
                 })
         return replies
+    
+    def generate_jsonl(self, jsonl_file_path:str, sessions:List[List[str]], ids:List[str]):
+        """For GPT4 queries with batch message"""
+        assert len(sessions) == len(ids), "Length of sessions and ids must be the same."
+        jsonl_data = []
+        for session, id in tqdm(zip(sessions, ids)):
+            sample_data = {}
+            sample_data['id'] = id
+            sample_data['text'] = session
+            sample_data['first_text_length'] = len(session[0])
+            sample_data['all_answers'] = []
+            jsonl_data.append(sample_data)
+        with jsonlines.open(jsonl_file_path, "w") as writer:
+            writer.write_all(jsonl_data)
+        self.logger.info(f"Generated jsonl file at {jsonl_file_path}")
     
 if __name__ == "__main__":
     api = GPTAPI(log_level=logging.DEBUG)
