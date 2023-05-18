@@ -13,11 +13,21 @@ os.environ["https_proxy"] = "https://localhost:7890"
 
 manager = TaskMemoryManager(memory_split="train", data_root_dir="teach-dataset", log_level=logging.DEBUG)
 
-manager.process_memory()
+# manager.process_memory()
+# game_id = "062836eb156ac8b8_f3de"
+# game_id = "dd9a71ec1af06961_30d8"
+game_id = "2b489b344a9ee00e_9717"
 manager.load_memory()
-manager.query_task_memory("Make sandwich", top_k=5)
-manager.query_task_memory("Wash dishes", top_k=5)
-manager.query_task_memory("Wash apples")
+game_memory = manager.retrieve_game_memory(game_id)
+explanation_prompt = manager.generate_explaination_prompt(game_memory)
+print(explanation_prompt)
+
+# synthesized_dialogue, synthesized_dialogue_and_subgoals = manager.synthesize_edh_sessions(game_memory)
+# print(synthesized_dialogue_and_subgoals)
+# task = manager.query_task_memory("Make sandwich", top_k=5)
+# print(task[0])
+# manager.query_task_memory("Wash dishes", top_k=5)
+# manager.query_task_memory("Wash apples")
 
 
 # openai.organization = "org-p5ug2Pool5bdCna5a285PeCU"
@@ -58,14 +68,14 @@ manager.query_task_memory("Wash apples")
 
 # GPT_RESULT_ROOT = "teach-dataset/gpt_data"
 # MERGED_OUTPUT = "merged_output.json"
-# EMBEDDINGS = "text_dialog_and_act_embeddings.npy"
+# EMBEDDINGS = "text_dialogue_and_act_embeddings.npy"
 
 # with open(f"{GPT_RESULT_ROOT}/{MERGED_OUTPUT}", "r") as f:
 #     data_all = json.load(f)
 
 # # corpus = []
 # # for item in data_all:
-# #     corpus.append(["Represent the household work dialogue",item['text_dialog_and_act']])
+# #     corpus.append(["Represent the household work dialogueue",item['text_dialogue_and_act']])
 
 # # corpus_embeddings = model.encode(corpus)
 # # np.save(f"{GPT_RESULT_ROOT}/{EMBEDDINGS}", corpus_embeddings)
@@ -83,4 +93,4 @@ manager.query_task_memory("Wash apples")
 
 #     for k, id in enumerate(retrieved_doc_ids):
 #         print(f"================== Closest: {k} ==================")
-#         print(data_all[id]['text_dialog_and_act'])
+#         print(data_all[id]['text_dialogue_and_act'])

@@ -32,7 +32,7 @@ class LLMSubgoalPredictor:
             str: The prompt for the subgoal prediction task.
         """
         
-        intro = "Suppose you are a household robot and your user will give you some tasks with language instructions. You need to propose some subgoals to complete this goal. Each subgoal can either be a <Manipulate> action or a <Place> action. Manipulate(<operation> ,<object>) means to apply an <operation> to the <object>. Place(<object>, <receptacle>) means to put the <object> in or on the <receptacle>. Note that if you place an <object> into a <receptacle>, it will be automatically removed from its previous <receptacle>. All the possible <objects>, <operations>, and <receptacles> are listed as below. "
+        intro = "Suppose you are a household robot and your user will give you some tasks with language instructions. You need to propose some subgoals to complete this goal. Each subgoal can either be a <Manipulate> action or a <Place> action. Manipulate(<operation>, <object>) means to apply an <operation> to the <object>. Place(<object>, <receptacle>) means to put the <object> in or on the <receptacle>. Note that if you place an <object> into a <receptacle>, it will be automatically removed from its previous <receptacle>. All the possible <objects>, <operations>, and <receptacles> are listed as below. "
 
         objects: List[str] = edh_session["objects"]
         receptacles: Dict[str, List[str]] = edh_session["receptacles"]
