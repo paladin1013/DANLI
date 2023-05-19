@@ -8,9 +8,9 @@ import re
 import logging
 from InstructorEmbedding import INSTRUCTOR
 import numpy as np
-from typing import List
+from typing import Any, Dict, List
 from sklearn.metrics.pairwise import cosine_similarity
-from model.utils.format_utils import match_terms
+from model.utils.format_utils import match_terms, parse_subgoal_line
 from definitions.teach_tasks import Operation
 
 
@@ -28,6 +28,7 @@ class TaskMemoryManager:
         self.logger.setLevel(log_level)
         self.model = None
         self.memory_embeddings = None
+        self.task_memory = None
 
     def retrieve_game_memory(self, game_id: str):
         """Retrieve memory of a specific game session"""
@@ -305,3 +306,30 @@ Please start to explain from the beginning of dialogue and subgoals. Please add 
             self.logger.debug(synthesized_dialog_and_subgoals)
             retrieved_tasks.append(self.task_memory[id])
         return retrieved_tasks
+
+    def parse_subgoal_explanations(self, gpt_session:Dict[str, Any]):
+        """Parse subgoal explanations from gpt_session"""
+        game_id:str = gpt_session["id"]
+        gpt_response:str = gpt_session["responses"][0]
+        
+        # Only keep the line breaks before each [Dialogue] and [Subgoal]
+        gpt_response = gpt_response.replace("\n", "").replace("[Subgoal]", "\n[Subgoal]").replace("[Dialogue]", "\n[Dialogue]")
+        
+        lines = gpt_response.splitlines()
+        explanations:List[str] = []
+        subgoals:List[tuple] = []
+        for idx, line in enumerate(lines):
+            if line.startswith("[Subgoal]"):
+                if "<Explanation" not in line:
+                    self.logger.warning(f"Subgoal string {line} does not have an explanation, skipped.")
+                    continue
+                subgoal_str = line.replace("[Subgoal]", "").split("<Explanation")[0].strip()
+                subgoal = parse_subgoal_line(subgoal_str, output_style="new")
+                if subgoal is None:
+                    self.logger.warning(f"Subgoal string {line} cannot be parsed, skipped.")
+                    continue
+                explanations.append(line.split("<Explanation")[-1].split(">")[0].replace(":", "").strip())
+                subgoals.append(subgoal)
+
+        return game_id, subgoals, explanations
+        

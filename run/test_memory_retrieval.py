@@ -11,8 +11,114 @@ import logging
 os.environ["http_proxy"] = "http://localhost:7890"
 os.environ["https_proxy"] = "https://localhost:7890"
 
-manager = TaskMemoryManager(memory_split="valid_unseen", data_root_dir="teach-dataset", log_level=logging.DEBUG)
+manager = TaskMemoryManager(memory_split="train", data_root_dir="teach-dataset", log_level=logging.DEBUG)
+reply_str = """
+Sure, here are the explanations for the subgoals from the dialogue:
 
+[Dialogue] Robot: Hello. How can I assist you?
+[Dialogue] Commander: Hi
+[Dialogue] Commander: slice lettuce
+[Dialogue] Robot: Sure. Knife location, please?
+[Dialogue] Commander: on the cabinet on top of the microwave
+[Dialogue] Robot: Thank you.
+[Subgoal] 1. Manipulate(Slice, Lettuce)
+<Explanation: The first task the commander gives to the robot is to slice the lettuce. Therefore, the initial subgoal is for the robot to slice the lettuce using the knife.>
+
+[Dialogue] Robot: Lettuce sliced.
+[Dialogue] Robot: Next?
+[Dialogue] Commander: slice a tomato
+[Dialogue] Robot: OK. Tomato location?
+[Dialogue] Commander: in the fridge
+[Dialogue] Robot: Thank you.
+[Subgoal] 2. Manipulate(Slice, Tomato)
+<Explanation: The commander's next task is to have a tomato sliced. Thus, the next subgoal is to slice the tomato.>
+
+[Dialogue] Robot: Tomato sliced.
+[Dialogue] Robot: Next?
+[Dialogue] Commander: cook a slice of potato
+[Dialogue] Robot: Sure
+[Subgoal] 3. Manipulate(Cook, PotatoSliced)
+<Explanation: Here, the commander instructs the robot to cook a slice of potato. The subgoal in this instance is to cook the already sliced potato.>
+
+[Dialogue] Robot: Potato cooked and sliced. Next?
+[Dialogue] Commander: add all sales components on the plate
+[Dialogue] Robot: Sure
+[Subgoal] 4. Place(Plate, DiningTable)
+<Explanation: The commander requests the robot to prepare a plate with the sliced ingredients. The subgoal, in this case, is to have the plate ready on the dining table.>
+
+[Dialogue] Robot: How many slices of lettuce for the plate?
+[Subgoal] 5. Place(LettuceSliced, Plate)
+<Explanation: Now that the plate is ready, the next task is to place the sliced lettuce on it, which is what this subgoal represents.>
+
+[Dialogue] Commander: one
+[Dialogue] Robot: OK
+[Dialogue] Robot: How many slices of tomato for the plate?
+[Subgoal] 6. Place(TomatoSliced, DiningTable)
+<Explanation: This subgoal seems to be a mistake, as the robot should place the sliced tomato on the plate, not the dining table.>
+
+[Subgoal] 7. Place(TomatoSliced, Plate)
+<Explanation: This is the correct subgoal as per the commander's instructions. The robot is to place the sliced tomato on the plate.>
+
+[Dialogue] Robot: How many potato slices?
+[Dialogue] Commander: 2
+[Dialogue] Commander: one tomato, two potatoes
+<Explanation: According to the commander's instructions, the robot needs to place one slice of tomato and two slices of potato on the plate. This forms the final configuration of the dish as per the dialogue.>"""
+prompt_str = """
+Please add brief explanations of each subgoal according to the previous dialog:
+
+[Dialogue] Robot: Hello. How can I assist you?
+[Dialogue] Commander: Hi
+[Dialogue] Commander: slice lettuce
+[Dialogue] Robot: Sure. Knife location, please?
+[Dialogue] Commander: on the cabinet on top of the microwave
+[Dialogue] Robot: Thank you.
+[Dialogue] Commander: cooker
+[Dialogue] Robot: Thank you.
+[Subgoal] 1. Manipulate(Slice, Lettuce)
+[Dialogue] Robot: Lettuce sliced.
+[Dialogue] Robot: Next?
+[Dialogue] Commander: slice a tomato
+[Dialogue] Robot: OK. Tomato location?
+[Dialogue] Commander: in the fridge
+[Dialogue] Robot: Thank you.
+[Subgoal] 2. Manipulate(Slice, Tomato)
+[Dialogue] Robot: Tomato sliced.
+[Dialogue] Robot: Next?
+[Dialogue] Commander: cook a slice of potato
+[Dialogue] Robot: Sure
+[Subgoal] 3. Manipulate(Cook, PotatoSliced)
+[Dialogue] Robot: Potato cooked and sliced. Next?
+[Dialogue] Commander: add all sales components on the plate
+[Dialogue] Robot: Sure
+[Subgoal] 4. Place(Plate, DiningTable)
+[Dialogue] Robot: How many slices of lettuce for the plate?
+[Subgoal] 5. Place(LettuceSliced, Plate)
+[Dialogue] Commander: one
+[Dialogue] Robot: OK
+[Dialogue] Robot: How many slices of tomato for the plate?
+[Subgoal] 6. Place(TomatoSliced, DiningTable)
+[Subgoal] 7. Place(TomatoSliced, Plate)
+[Dialogue] Robot: How many potato slices?
+[Dialogue] Commander: 2
+[Dialogue] Commander: one tomato, two potatoes
+
+Here are some example explanations of three subgoals:
+[Dialogue] Robot: hello what is my task
+[Dialogue] Commander: Today, you'll be preparing breakfast.
+[Dialogue] Commander: First, make coffee.
+[Dialogue] Commander: Put the Place the coffee on the table.
+[Subgoal] 1. Place(Mug, CoffeeMachine) <Explanation:The commander requires the robot to make a coffee as a part of breakfast. The robot should first put a mug inside the coffee machine.>
+[Subgoal] 2. Manipulate(FillWithCoffee, Mug) <Explanation: After the mug is placed inside the coffee machine, it can be filled with coffee afterwards.>
+[Subgoal] 3. Place(Coffee, DiningTable) <Explanation: We use Coffee to represent the mug which is filled with coffee. It should be placed on the dining table according to the commander's instruction.>
+
+Please start to explain from the beginning of dialogue and subgoals. Please add <Explanation> after each [Subgoal] while also keep every [Dialogue]."""
+gpt_session = {"id": "2b489b344a9ee00e_9717", "responses": [reply_str], "prompts": [prompt_str]}
+
+game_id, subgoals, explanations = manager.parse_subgoal_explanations(gpt_session)
+print(game_id, subgoals, explanations)
+game_memory = manager.retrieve_game_memory(game_id)
+all_subgoals = [sg for edh_sg in game_memory["processed_subgoals"] for sg in edh_sg if sg[1] != "isPickedUp"]
+print(len(subgoals), len(all_subgoals))
 # manager.process_memory()
 # manager.process_memory()
 # game_id = "062836eb156ac8b8_f3de"
