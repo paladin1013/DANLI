@@ -363,7 +363,10 @@ class GoalReceptacles(Enum):
 #     strr += "%s = %d\n"%(o, idx)
 # print(strr)
 
-
+class ActionType(Enum):
+    Manipulate = 0
+    Place = 1
+    
 
 class Operation(Enum):
     Cook = 1

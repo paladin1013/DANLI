@@ -11,16 +11,18 @@ import logging
 os.environ["http_proxy"] = "http://localhost:7890"
 os.environ["https_proxy"] = "https://localhost:7890"
 
-manager = TaskMemoryManager(memory_split="train", data_root_dir="teach-dataset", log_level=logging.DEBUG)
+manager = TaskMemoryManager(memory_split="valid_unseen", data_root_dir="teach-dataset", log_level=logging.DEBUG)
 
+# manager.process_memory()
 # manager.process_memory()
 # game_id = "062836eb156ac8b8_f3de"
 # game_id = "dd9a71ec1af06961_30d8"
-game_id = "2b489b344a9ee00e_9717"
-manager.load_memory()
-game_memory = manager.retrieve_game_memory(game_id)
-explanation_prompt = manager.generate_explaination_prompt(game_memory)
-print(explanation_prompt)
+# game_id = "2b489b344a9ee00e_9717"
+# manager.load_memory()
+
+# game_memory = manager.retrieve_game_memory(game_id)
+# explanation_prompt = manager.generate_explaination_prompt(game_memory)
+# print(explanation_prompt)
 
 # synthesized_dialogue, synthesized_dialogue_and_subgoals = manager.synthesize_edh_sessions(game_memory)
 # print(synthesized_dialogue_and_subgoals)

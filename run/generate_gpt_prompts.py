@@ -58,10 +58,8 @@ if __name__ == "__main__":
     for split in ["train", "valid_seen", "valid_unseen"]:
         manager = TaskMemoryManager(memory_split=split, data_root_dir="teach-dataset")
         manager.load_memory()
-        sessions:List[List[str]] = []
-        ids:List[str] = []
+        sessions:Dict[str, Dict] = {}
         for task in manager.task_memory:
-            ids.append(task["game_id"])
-            sessions.append([manager.generate_explaination_prompt(task)])
-        gpt_api.generate_jsonl(f"{GPT_RESULT_ROOT}/prompts/subgoal_explainations_prompt_{split}.jsonl", sessions, ids)
+            sessions[task["game_id"]] = {"id": task["game_id"], "prompts":[manager.generate_explaination_prompt(task)]}
+        gpt_api.generate_jsonl(f"{GPT_RESULT_ROOT}/prompts/subgoal_explainations_prompt_{split}.jsonl", sessions)
             

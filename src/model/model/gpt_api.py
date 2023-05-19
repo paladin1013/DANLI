@@ -1,4 +1,3 @@
-# %%
 import os
 import sys
 from typing import List, Dict, cast
@@ -66,20 +65,28 @@ class GPTAPI:
                 })
         return replies
     
-    def generate_jsonl(self, jsonl_file_path:str, sessions:List[List[str]], ids:List[str]):
+    def generate_jsonl(self, jsonl_file_path:str, sessions:Dict[str, Dict]):
         """For GPT4 queries with batch message"""
-        assert len(sessions) == len(ids), "Length of sessions and ids must be the same."
+
         jsonl_data = []
-        for session, id in tqdm(zip(sessions, ids)):
+        for id, session in tqdm(sessions.items()):
             sample_data = {}
             sample_data['id'] = id
-            sample_data['text'] = session
-            sample_data['first_text_length'] = len(session[0])
+            sample_data['text'] = session['prompts']
+            sample_data['first_text_length'] = len(session['prompts'][0])
             sample_data['all_answers'] = []
             jsonl_data.append(sample_data)
         with jsonlines.open(jsonl_file_path, "w") as writer:
             writer.write_all(jsonl_data)
         self.logger.info(f"Generated jsonl file at {jsonl_file_path}")
+    
+    def load_response_jsonl(self, jsonl_file_path:str):
+        """For GPT4 queries with batch message"""
+        sessions:Dict[str, Dict] = {}
+        with jsonlines.open(jsonl_file_path) as reader:
+            for obj in reader:
+                sessions[obj['id']] = {"id": obj['id'], "prompts": obj['text'], "responses": obj['all_answers'], "error": obj['error'] if 'error' in obj.keys() else None}
+        return sessions
     
 if __name__ == "__main__":
     api = GPTAPI(log_level=logging.DEBUG)

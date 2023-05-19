@@ -4,13 +4,10 @@ from typing import Any, Dict, List
 from model.model.gpt_api import GPTAPI
 from model.data.memory_manager import TaskMemoryManager
 import logging
-from definitions.teach_tasks import GoalArguments, GoalReceptacles, GoalConditions, Operation, OPERATION_EXPLANATION
+from definitions.teach_tasks import Operation, OPERATION_EXPLANATION
 import json
-from model.utils.format_utils import match_terms
+from model.utils.format_utils import parse_subgoal_line
 
-class ActionType(Enum):
-    Manipulate = 0
-    Place = 1
 
 
 class LLMSubgoalPredictor:
@@ -88,63 +85,16 @@ class LLMSubgoalPredictor:
                 formatted_lines = lines[idx+1:]
                 break
         for line in formatted_lines:
-            # Match the format "1. Manipulate(PickUp, Knife)" with ascending idx
-            # TODO: add more checks to make sure the format is correct
             try:
-                if "Manipulate" in line:
-                    try:
-                        # In case GPT made the wrong order because of error prompts
-                        operation, object = line.split("(")[1].split(")")[0].split(", ")
-                        operation = match_terms(operation, "operation")
-                        object = match_terms(object, "object")
-                    except ValueError as e:
-                        # Swap the orders of object and operation
-                        object, operation = line.split("(")[1].split(")")[0].split(", ")
-                        operation = match_terms(operation, "operation")
-                        object = match_terms(object, "object")
-                            
-                    subgoals.append((ActionType.Manipulate, operation, object))
-
-                elif "Place" in line:
-                    object, receptacle = line.split("(")[1].split(")")[0].split(", ")
-                    object = match_terms(object, "object")
-                    receptacle = match_terms(receptacle, "receptacle")
-                    subgoals.append((ActionType.Place, object, receptacle))
+                parsed_subgoal = parse_subgoal_line(line, output_style=output_style)
+                if parsed_subgoal:
+                    subgoals.append(parsed_subgoal)
             except ValueError as e:
                 parse_error = True
                 if self.ignore_invalid:
                     self.logger.warning(f"Parsing instruction {line}: {str(e)}")
                     continue
-                
-        if output_style == "new":
-            return subgoals, parse_error
-        elif output_style == "DANLI":
-            subgoals_DANLI = []
-            for subgoal in subgoals:
-                try:
-                    if subgoal[0] == ActionType.Manipulate:
-                        operation = match_terms(subgoal[1].name, "goal_condition")
-                        object = match_terms(subgoal[2].name, "object")
-                        subgoals_DANLI.append((object, operation, GoalReceptacles.NONE))
-                    elif subgoal[0] == ActionType.Place:
-                        object = match_terms(subgoal[1].name, "object")
-                        receptacle = match_terms(subgoal[2].name, "receptacle")
-                        subgoals_DANLI.append(
-                            (object, GoalConditions.parentReceptacles, receptacle)
-                        )
-                except ValueError as e:
-                    parse_error = True
-                    if self.ignore_invalid:
-                        self.logger.warning(f"Parsing subgoal for DANLI output {subgoal}: {str(e)}")
-                        continue
-            subgoals_DANLI.append(
-                (GoalArguments.NONE, GoalConditions.EOS, GoalReceptacles.NONE)
-            )
-            return subgoals_DANLI, parse_error
-        else:
-            raise NotImplementedError(
-                f"output_style {output_style} has not been implemented yet."
-            )
+        return subgoals, parse_error
 
     def predict(self, edh_session: Dict[str, Any]):
         replies = self.gpt_api.send(

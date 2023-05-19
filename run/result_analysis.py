@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import sys
 from model.model.llm_subgoal_predictor import LLMSubgoalPredictor
+from model.model.gpt_api import GPTAPI
 import logging
 from typing import List
 import numpy as np
@@ -22,17 +23,14 @@ class DataAnalyzer:
         except:
             self.logger.warning(f"Results of bart predictor {self.result_root}/{bart_results} does not exist!")
 
-    def load_gpt_data(self, gpt_results="gpt4_output.json"):
-        try:
-            with open(f"{self.result_root}/{gpt_results}", "r") as f:
-                gpt_out_lines = list(f)
-            gpt_out_list = []
-            for line in gpt_out_lines:
-                gpt_out_list.append(json.loads(line))
-            gpt_out = pd.DataFrame.from_dict(gpt_out_list)
-            self.gpt_results = self.parse_gpt_output(gpt_out)
-        except:
-            self.logger.warning(f"Results of gpt predictor {self.result_root}/{gpt_results} does not exist!")
+    def load_gpt_data(self, gpt_results="gpt4_output.jsonl"):
+        gpt_api = GPTAPI(model="gpt4")
+        sessions = gpt_api.load_response_jsonl(f"{self.result_root}/{gpt_results}")
+        # try:
+        gpt_out = pd.DataFrame.from_dict(sessions.values())
+        self.gpt_results = self.parse_gpt_output(gpt_out)
+        # except:
+        #     self.logger.warning(f"Results of gpt predictor {self.result_root}/{gpt_results} does not exist!")
 
     
     def merge_results(self, merged_output="merged_output.json"):
@@ -43,7 +41,7 @@ class DataAnalyzer:
         
     def get_respond(self, df: pd.DataFrame, game_id:str, edh_num:int):
         series = df[df['id'] ==f"{game_id}-edh{edh_num}"]
-        return series["all_answers"].to_list()[0][1]
+        return series["responses"].to_list()[0][1]
 
     # print(get_respond(gpt_out, "bfa7505b440eadde_7fab", 2))
 
@@ -55,10 +53,10 @@ class DataAnalyzer:
             series['game_id'] = id_str.split('-edh')[0]
             series['edh_num'] = int(id_str.split('-edh')[1])
             if pd.isna(series['error']):
-                series['subgoals_gpt4'], series['parse_error'] = llm_sg_predictor.parse_gpt_reply_to_str(series["all_answers"][1])
-                # print(f"  gpt response: {series['all_answers'][1]}")
+                series['subgoals_gpt4'], series['parse_error'] = llm_sg_predictor.parse_gpt_reply_to_str(series["responses"][1])
+                # print(f"  gpt response: {series['responses'][1]}")
             return series
-        self.gpt_results = gpt_out.apply(process_series, axis=1).rename(columns={"all_answers": "gpt_reply_raw"})
+        self.gpt_results = gpt_out.apply(process_series, axis=1).rename(columns={"responses": "gpt_reply_raw"})
         
     
     def calc_accuracy(self, predictor="bart"):
@@ -110,5 +108,6 @@ class DataAnalyzer:
 
 if __name__ == "__main__":
     da = DataAnalyzer()
-    da.load_bart_data()
-    da.calc_accuracy()
+    da.load_gpt_data()
+    # da.load_bart_data()
+    # da.calc_accuracy()

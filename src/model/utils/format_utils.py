@@ -1,9 +1,9 @@
 from typing import List, Dict
-from definitions.teach_tasks import GoalArguments, GoalReceptacles, GoalConditions, Operation, OPERATION_EXPLANATION
+from definitions.teach_tasks import ActionType, GoalArguments, GoalReceptacles, GoalConditions, Operation, OPERATION_EXPLANATION
 from difflib import get_close_matches
 from model.utils.data_util import process_edh_for_subgoal_prediction
 import json
-
+from logging import Logger
 def parse_edh_data(edh_raw, text_dialog_and_act):
     objects = edh_raw['init_state_diff']['objects']
     
@@ -63,3 +63,47 @@ def load_edh_file(file_path:str):
         edh_raw = json.load(f)
     edh_text, dialog_history = process_edh_for_subgoal_prediction(edh_raw)
     return edh_raw, edh_text
+
+def parse_subgoal_line(line:str, output_style="DANLI"):
+    # Match the format "1. Manipulate(PickUp, Knife)" with ascending idx
+    # TODO: add more checks to make sure the format is correct
+    if "Manipulate" in line:
+        try:
+            # In case GPT made the wrong order because of error prompts
+            operation, object = line.split("(")[1].split(")")[0].split(", ")
+            operation = match_terms(operation, "operation")
+            object = match_terms(object, "object")
+        except ValueError as e:
+            # Swap the orders of object and operation
+            object, operation = line.split("(")[1].split(")")[0].split(", ")
+            operation = match_terms(operation, "operation")
+            object = match_terms(object, "object")
+                    
+        subgoal =  (ActionType.Manipulate, operation, object)
+
+    elif "Place" in line:
+        object, receptacle = line.split("(")[1].split(")")[0].split(", ")
+        object = match_terms(object, "object")
+        receptacle = match_terms(receptacle, "receptacle")
+        subgoal = (ActionType.Place, object, receptacle)
+    
+    else:
+        return None
+        
+    if output_style == "new":
+        return subgoal
+    
+    elif output_style == "DANLI":
+        if subgoal[0] == ActionType.Manipulate:
+            operation = match_terms(subgoal[1].name, "goal_condition")
+            object = match_terms(subgoal[2].name, "object")
+            return (object, operation, GoalReceptacles.NONE)
+        elif subgoal[0] == ActionType.Place:
+            object = match_terms(subgoal[1].name, "object")
+            receptacle = match_terms(subgoal[2].name, "receptacle")
+            return (object, GoalConditions.parentReceptacles, receptacle)
+        
+    else:
+        raise NotImplementedError(
+            f"output_style {output_style} has not been implemented yet."
+        )
