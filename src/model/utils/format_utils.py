@@ -34,6 +34,7 @@ def match_terms(input_str: str, input_type: str):
     elif input_type == "operation":
         # Some manual alignments
         input_str = input_str.replace("Empty", "Pour").replace("Emptied", "Pour")
+        input_str = input_str.replace("simbotIs", "").replace("is", "")
         enums = Operation
     elif input_type == "receptacle":
         enums = GoalReceptacles
@@ -107,3 +108,22 @@ def parse_subgoal_line(line:str, output_style="DANLI"):
         raise NotImplementedError(
             f"output_style {output_style} has not been implemented yet."
         )
+
+
+def danli2gpt(danli_subgoal):
+    # If subgoals are in the string format
+    subj, pred, obj = danli_subgoal
+    if isinstance(subj, str):
+        subj = match_terms(subj, "object")
+    if isinstance(obj, str):
+        obj = match_terms(obj, "receptacle")
+    if isinstance(pred, str):
+        if pred == "parentReceptacles":
+            pred = GoalConditions.parentReceptacles
+        else:
+            pred = match_terms(pred, "operation")
+            
+    if pred == GoalConditions.parentReceptacles:
+        return (ActionType.Place, subj, obj)
+    else:
+        return (ActionType.Manipulate, pred, subj)

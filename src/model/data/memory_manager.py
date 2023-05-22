@@ -16,11 +16,11 @@ from definitions.teach_tasks import Operation
 
 class TaskMemoryManager:
     def __init__(self, memory_split: str, data_root_dir: str, log_level=logging.INFO):
-        if memory_split in ["train", "valid_seen", "valid_unseen"]:
+        if memory_split in ["train", "valid_seen", "valid_unseen", "all"]:
             self.memory_split = memory_split
         else:
             raise ValueError(
-                f"memory_split should be one of 'train', 'valid_seen', 'valid_unseen', but got {memory_split}."
+                f"memory_split should be one of 'train', 'valid_seen', 'valid_unseen', 'all', but got {memory_split}."
             )
         self.data_root_dir = data_root_dir
         self.logger = logging.getLogger("TaskMemoryManager")
@@ -151,6 +151,8 @@ class TaskMemoryManager:
             f"{self.data_root_dir}/processed_memory/embeddings_{self.memory_split}",
             self.memory_embeddings,
         )
+        
+
 
     def update_holding_items(self, game_subgoals: List[List[List[str]]]):
         # subgoals_with_inventory = []
@@ -270,19 +272,30 @@ Please start to explain from the beginning of dialogue and subgoals. Please add 
         return corpus_embeddings
 
     def load_memory(self):
-        with open(
-            f"{self.data_root_dir}/processed_memory/game_memory_{self.memory_split}.json",
-            "r",
-        ) as f:
-            self.task_memory = json.load(f)
-        with open(
-            f"{self.data_root_dir}/processed_memory/embeddings_{self.memory_split}.npy",
-            "rb",
-        ) as f:
-            self.memory_embeddings = np.load(f, allow_pickle=True)
-
+        if self.memory_split == "all":
+            splits = ["train", "valid_seen", "valid_unseen"]
+        else:
+            splits = [self.memory_split]
+        
+        self.task_memory = []
+        memory_embeddings = []
+        for split in splits:
+            with open(
+                f"{self.data_root_dir}/processed_memory/game_memory_{split}.json",
+                "r",
+            ) as f:
+                new_task_memory = json.load(f)
+            with open(
+                f"{self.data_root_dir}/processed_memory/embeddings_{split}.npy",
+                "rb",
+            ) as f:
+                new_memory_embeddings = np.load(f, allow_pickle=True)
+            self.task_memory += new_task_memory
+            memory_embeddings.append(new_memory_embeddings)
+        self.memory_embeddings = np.concatenate(memory_embeddings, axis=0)
+        assert len(self.task_memory) == self.memory_embeddings.shape[0]
         self.logger.info(
-            f"{self.memory_split} memory loaded: {len(self.task_memory)} sessions"
+            f"{splits} memory loaded: {len(self.task_memory)} sessions"
         )
 
     def query_task_memory(self, description: str, top_k: int = 1):
@@ -307,7 +320,7 @@ Please start to explain from the beginning of dialogue and subgoals. Please add 
             retrieved_tasks.append(self.task_memory[id])
         return retrieved_tasks
 
-    def parse_subgoal_explanations(self, gpt_session:Dict[str, Any]):
+    def parse_subgoal_explanations(self, gpt_session:Dict[str, Any], ignore_invalid=True):
         """Parse subgoal explanations from gpt_session"""
         game_id:str = gpt_session["id"]
         gpt_response:str = gpt_session["responses"][0]
@@ -320,15 +333,21 @@ Please start to explain from the beginning of dialogue and subgoals. Please add 
         subgoals:List[tuple] = []
         for idx, line in enumerate(lines):
             if line.startswith("[Subgoal]"):
-                if "<Explanation" not in line:
+                line = line.replace("<", "[").replace(">", "]") # Some explanations are not in the format of <Explanation>, but [Explanation]
+                if "[Explanation" not in line:
                     self.logger.warning(f"Subgoal string {line} does not have an explanation, skipped.")
                     continue
-                subgoal_str = line.replace("[Subgoal]", "").split("<Explanation")[0].strip()
-                subgoal = parse_subgoal_line(subgoal_str, output_style="new")
+                subgoal_str = line.replace("[Subgoal]", "").split("[Explanation")[0].strip()
+                try:
+                    subgoal = parse_subgoal_line(subgoal_str, output_style="new")
+                except:
+                    subgoal = None
+                    if not ignore_invalid:
+                        raise ValueError(f"Subgoal string {line} cannot be parsed, skipped.")
                 if subgoal is None:
                     self.logger.warning(f"Subgoal string {line} cannot be parsed, skipped.")
                     continue
-                explanations.append(line.split("<Explanation")[-1].split(">")[0].replace(":", "").strip())
+                explanations.append(subgoal_str.split("[Explanation")[-1].split("]")[0].replace(":", "").strip())
                 subgoals.append(subgoal)
 
         return game_id, subgoals, explanations
