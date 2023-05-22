@@ -12,7 +12,7 @@ from tqdm import tqdm
 import sys
 import jsonlines
 from typing import List, Dict
-from model.model.gpt_api import GPTAPI
+from model.model.gpt_api import GPTAPI, GPT4Session
 from model.data.memory_manager import TaskMemoryManager
 SPLIT = "valid_unseen"
 EDH_JSON_ROOT = f"teach-dataset/edh_instances/{SPLIT}/"
@@ -58,8 +58,8 @@ if __name__ == "__main__":
     for split in ["train", "valid_seen", "valid_unseen"]:
         manager = TaskMemoryManager(memory_split=split, data_root_dir="teach-dataset")
         manager.load_memory()
-        sessions:Dict[str, Dict] = {}
+        sessions:Dict[str, GPT4Session] = {}
         for task in manager.task_memory:
-            sessions[task["game_id"]] = {"id": task["game_id"], "prompts":[manager.generate_explaination_prompt(task)]}
+            sessions[task["game_id"]] = GPT4Session(id=task["game_id"], prompts=[manager.generate_explaination_prompt(task)], replies=[], error=None)
         gpt_api.generate_jsonl(f"{GPT_RESULT_ROOT}/prompts/subgoal_explainations_prompt_{split}.jsonl", sessions)
             

@@ -1,13 +1,21 @@
 import os
 import sys
-from typing import List, Dict, cast
+from typing import Optional, List, Dict, cast
 import openai
 import logging
 import jsonlines
 from tqdm import tqdm
+from pydantic import BaseModel
 openai.organization = "org-p5ug2Pool5bdCna5a285PeCU"
 openai.api_key = os.getenv("OPENAI_API_KEY")
 openai.proxy = {"http":"http://localhost:7890", "https":"https://localhost:7890"}
+
+
+class GPT4Session(BaseModel):
+    id:str
+    prompts:List[str]
+    replies:List[str]
+    error:Optional[str]
 
 class GPTAPI:
     def __init__(self, provider="openai", model="gpt-3.5-turbo", log_level=logging.INFO, temperature=0):
@@ -65,15 +73,15 @@ class GPTAPI:
                 })
         return replies
     
-    def generate_jsonl(self, jsonl_file_path:str, sessions:Dict[str, Dict]):
+    def generate_jsonl(self, jsonl_file_path:str, sessions:Dict[str, GPT4Session]):
         """For GPT4 queries with batch message"""
 
         jsonl_data = []
         for id, session in tqdm(sessions.items()):
             sample_data = {}
             sample_data['id'] = id
-            sample_data['text'] = session['prompts']
-            sample_data['first_text_length'] = len(session['prompts'][0])
+            sample_data['text'] = session.prompts
+            sample_data['first_text_length'] = len(session.prompts[0])
             sample_data['all_answers'] = []
             jsonl_data.append(sample_data)
         with jsonlines.open(jsonl_file_path, "w") as writer:
@@ -82,10 +90,10 @@ class GPTAPI:
     
     def load_response_jsonl(self, jsonl_file_path:str):
         """For GPT4 queries with batch message"""
-        sessions:Dict[str, Dict] = {}
+        sessions:Dict[str, GPT4Session] = {}
         with jsonlines.open(jsonl_file_path) as reader:
             for obj in reader:
-                sessions[obj['id']] = {"id": obj['id'], "prompts": obj['text'], "responses": obj['all_answers'], "error": obj['error'] if 'error' in obj.keys() else None}
+                sessions[obj['id']] = GPT4Session(id=obj['id'], prompts=obj['text'], replies=obj['all_answers'], error=obj['error'] if 'error' in obj.keys() else None)
         return sessions
     
 if __name__ == "__main__":
